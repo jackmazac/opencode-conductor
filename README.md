@@ -31,6 +31,18 @@ Conductor registers explicit tools for draft plans and canonical plans:
 
 Use `read_subplan({ "slug": "...", "section": "..." })` or `read_final_plan({ "slug": "...", "section": "..." })` to read a single markdown heading section from a large plan.
 
+## Explore fast tool
+
+Conductor registers `explore_fast`, a read-only codebase exploration tool backed by Cursor CLI headless mode and Composer 2 Fast. It packages the explore system prompt at `prompts/explore.txt`, so the behavior does not depend on a user-specific OpenCode config path.
+
+The tool expects the Cursor CLI `agent` command to be installed and authenticated. It invokes Cursor with JSON output in print mode:
+
+```bash
+agent -p --model composer-2-fast --mode ask --output-format json --workspace <workspace> <prompt>
+```
+
+`explore_fast` does not pass `--force` or `--yolo`, constrains optional focus paths to the active workspace, and bounds returned output before handing it back to OpenCode.
+
 ## Extraction status
 
-This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools live here; future packaging waves can move agent definitions and prompts here without changing behavior.
+This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools and the fast explore prompt/tool live here; future packaging waves can move remaining agent definitions and prompts here without changing behavior.

@@ -1,5 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
+import { runExploreFast, type ExploreFastProcessRunner } from "./explore-fast"
 import { createPlanArtifactStore } from "./plan-artifacts"
+import { createWorkflowArtifactTools } from "./workflow-artifacts"
 
 const subplans = createPlanArtifactStore({
   folder: "subplans",
@@ -15,9 +17,47 @@ const finalPlans = createPlanArtifactStore({
   readCap: 3000,
 })
 
-export const ConductorPlugin: Plugin = async () => {
+export type ConductorPluginDeps = {
+  exploreFastRunner?: ExploreFastProcessRunner
+}
+
+export function createConductorHooks(deps: ConductorPluginDeps = {}) {
   return {
     tool: {
+      ...createWorkflowArtifactTools(),
+      explore_fast: tool({
+        description:
+          "Run fast read-only codebase exploration through Cursor CLI headless mode using Composer 2 Fast and the packaged explore prompt.",
+        args: {
+          query: tool.schema.string().describe("Codebase exploration request, question, or search brief."),
+          path: tool.schema
+            .string()
+            .optional()
+            .describe("Optional workspace-relative path to focus the exploration. Must stay inside the workspace."),
+          max_output_chars: tool.schema
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Optional maximum number of output characters returned to the caller."),
+          timeout_ms: tool.schema
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Optional Cursor CLI timeout in milliseconds."),
+        },
+        async execute(args, context) {
+          return runExploreFast({
+            directory: context.directory,
+            query: args.query,
+            path: args.path,
+            maxOutputChars: args.max_output_chars,
+            timeoutMs: args.timeout_ms,
+            runner: deps.exploreFastRunner,
+          })
+        },
+      }),
       persist_subplan: tool({
         description:
           "Persist a planner draft or intermediary plan to .opencode/subplans/<slug>.md. Planner agents use this for candidate plans before the orchestrator synthesizes the final canonical plan.",
@@ -90,6 +130,10 @@ export const ConductorPlugin: Plugin = async () => {
       }),
     },
   }
+}
+
+export const ConductorPlugin: Plugin = async () => {
+  return createConductorHooks()
 }
 
 export default ConductorPlugin

@@ -22,6 +22,7 @@
   },
   "files": [
     "src",
+    "!src/**/*.test.ts",
     "prompts",
     "docs",
     "README.md",
@@ -35,7 +36,8 @@
     "@types/bun": "latest",
     "@types/node": "latest",
     "@tsconfig/bun": "latest",
-    "@typescript/native-preview": "latest"
+    "@typescript/native-preview": "latest",
+    "opencode-engram": "file:../engram"
   },
   "scripts": {
     "test": "bun test",
