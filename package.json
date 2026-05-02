@@ -38,6 +38,7 @@
     "@typescript/native-preview": "latest"
   },
   "scripts": {
+    "test": "bun test",
     "typecheck": "tsgo --noEmit"
   }
 }

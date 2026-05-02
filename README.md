@@ -22,6 +22,15 @@ Conductor is a software-engineering operating system for OpenCode: plan, delegat
 }
 ```
 
-## Current scaffold
+## Plan artifact tools
 
-This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. The first packaging wave should move agent definitions, prompts, and artifact tools here without changing behavior.
+Conductor registers explicit tools for draft plans and canonical plans:
+
+- `persist_subplan`, `read_subplan`, `discard_subplan` store planner drafts in `.opencode/subplans/<slug>.md`.
+- `persist_final_plan`, `read_final_plan`, `discard_final_plan` store orchestrator-approved plans in `.opencode/plans/<slug>.md`.
+
+Use `read_subplan({ "slug": "...", "section": "..." })` or `read_final_plan({ "slug": "...", "section": "..." })` to read a single markdown heading section from a large plan.
+
+## Extraction status
+
+This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools live here; future packaging waves can move agent definitions and prompts here without changing behavior.
