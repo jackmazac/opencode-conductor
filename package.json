@@ -19,6 +19,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
     "./bridge-contracts": "./packages/bridge-contracts/src/index.ts",
     "./bridge-contracts/events": "./packages/bridge-contracts/src/events.ts",
     "./bridge-contracts/messages": "./packages/bridge-contracts/src/messages.ts",
@@ -44,6 +45,9 @@
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "conductor": "./src/cli.ts"
+  },
   "dependencies": {
     "@jackmazac/opencode-host-adapter": "file:/Users/jack.mazac/Developer/opencode-host-adapter",
     "@opencode-ai/plugin": "1.14.31",
