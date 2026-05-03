@@ -1,4 +1,5 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
+import { wrapPlugin } from "@jackmazac/opencode-host-adapter"
 import { runExploreFast, type ExploreFastProcessRunner } from "./explore-fast"
 import { createPlanArtifactStore } from "./plan-artifacts"
 import { createWorkflowArtifactTools } from "./workflow-artifacts"
@@ -136,4 +137,4 @@ export const ConductorPlugin: Plugin = async () => {
   return createConductorHooks()
 }
 
-export default ConductorPlugin
+export default wrapPlugin(ConductorPlugin, { name: "conductor" })
