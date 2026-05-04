@@ -1,74 +1,120 @@
-# OpenCode Conductor
+# @jackmazac/opencode-conductor
 
-OpenCode Conductor is an opinionated orchestration plugin for turning OpenCode from an ad hoc assistant into a disciplined multi-agent engineering workflow.
+Doctrine, plans, waves, runs, and lifecycle for the OpenCode plugin fleet.
 
-It owns agent definitions, planning conventions, delegation rules, review discipline, and documentation/scribe expectations. It is intentionally separate from Engram: Conductor coordinates work; Engram remembers and evaluates work.
+## What Conductor is
 
-## Product framing
-
-Conductor is a software-engineering operating system for OpenCode: plan, delegate, execute, review, document, and learn in repeatable waves.
-
-## Relationship to Engram
-
-- Conductor works without Engram.
-- Engram works without Conductor.
-- Together, Conductor can request Engram preflight context before large plans and Engram can learn from Conductor artifacts through the bridge contract.
-
-## Install during local development
-
-```json
-{
-  "plugin": ["file:///Users/jack.mazac/Developer/opencode-conductor/src/index.ts"]
-}
-```
-
-## Plan artifact tools
-
-Conductor registers explicit tools for draft plans and canonical plans:
-
-- `persist_subplan`, `read_subplan`, `discard_subplan` store planner drafts in `.opencode/subplans/<slug>.md`.
-- `persist_final_plan`, `read_final_plan`, `discard_final_plan` store orchestrator-approved plans in `.opencode/plans/<slug>.md`.
-
-Use `read_subplan({ "slug": "...", "section": "..." })` or `read_final_plan({ "slug": "...", "section": "..." })` to read a single markdown heading section from a large plan.
-
-## Explore fast tool
-
-Conductor registers `explore_fast`, a read-only codebase exploration tool backed by Cursor CLI headless mode and Composer 2 Fast. It packages the explore system prompt at `prompts/explore.txt`, so the behavior does not depend on a user-specific OpenCode config path.
-
-The tool expects the Cursor CLI `agent` command to be installed and authenticated. It invokes Cursor with JSON output in print mode:
-
-```bash
-agent -p --model composer-2-fast --mode ask --output-format json --workspace <workspace> <prompt>
-```
-
-`explore_fast` does not pass `--force` or `--yolo`, constrains optional focus paths to the active workspace, and bounds returned output before handing it back to OpenCode.
-
-## Context usage tool
-
-Conductor registers `context_usage`, the orchestration/context-budget diagnostic previously kept in the user config repo. It reads the current OpenCode session through the plugin host client, groups estimated token usage by system, user, assistant, tool output, and reasoning content, and returns a concise visual summary for the caller to analyze.
-
-## Extraction status
-
-This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools and the fast explore prompt/tool live here; future packaging waves can move remaining agent definitions and prompts here without changing behavior.
+Conductor is the doctrine and orchestration plugin for the OpenCode fleet. It writes canonical plans, run records, status mirrors, progress trackers, audits, journals, handoffs, and lifecycle artifacts. It integrates with the rest of the fleet through declarative handoffs — no shell-outs to other plugins in production. Conductor answers the question "what is the correct way to do this in this repo?" and enforces that answer through its tool surface and artifact shapes.
 
 ## Ownership
 
 Conductor owns:
 
-- Doctrine and prescriptions, including stack detection and profile export.
-- Plans, subplans, and canonical plans in `.opencode/plans/` and `.opencode/subplans/`.
-- Lifecycle artifacts and the Conductor spine in `.opencode/lifecycle/` and `.opencode/spine/events.sqlite`.
-- Run records and status mirrors in `.opencode/runs/` and `.opencode/status/`.
-- Journal, handoff, audit, and progress artifacts.
-- Agent-directed exploration through `explore_fast`.
-- Context-budget diagnostics through `context_usage`.
+- Plans + subplans (`.opencode/plans/`, `.opencode/subplans/`)
+- Plan index (`.opencode/plans/index.json`, maps `plan_id` ↔ `plan_slug`)
+- Run records + status mirrors (`.opencode/runs/`, `.opencode/status/`)
+- Progress tracking — plan and audit (`.opencode/progress/`, `.opencode/audit-progress/`)
+- Journal (`.opencode/journal.jsonl`), handoff (`.opencode/handoff.md`), audits (`.opencode/audits/`)
+- Concord lifecycle artifacts — declarative (`.opencode/lifecycle/artifacts/concord/`)
+- Event spine (`.opencode/spine/events.sqlite`)
+- Agent-directed exploration (`explore_fast`)
+- Context budget diagnostics (`context_usage`)
 
-Conductor does not own:
+Conductor does NOT own:
 
-- Memory retrieval or artifact ingestion; that is Engram. Conductor writes lifecycle artifacts declaratively, and Engram picks them up through its own ingest path.
-- Code-graph, drift, impact, or API-surface truth; that is Codemem.
-- Live edit locks and conflict guidance; that is Concord.
-- Install, doctor, and test orchestration across plugins; that is opencode-fleet.
-- Plugin-boundary defense; that is opencode-host-adapter.
+- Memory retrieval / artifact ingest → Engram
+- Code-graph / drift / impact / API-surface truth → Codemem
+- Live edit locks / conflict guidance → Concord
+- Plugin install / cross-plugin doctor / runtime contract validation → opencode-fleet
+- Plugin-boundary safety / telemetry emission → opencode-host-adapter
+- Canonical IDs / telemetry envelope / artifact ref / health report shapes → opencode-fleet-contracts
 
-See the `fleet-correlation` plan for how Conductor interoperates with the other fleet plugins.
+## Install
+
+```bash
+bun add @jackmazac/opencode-conductor
+```
+
+Then add to your `opencode.json` plugin array, or regenerate it via `opencode-fleet generate-opencode-json`.
+
+For local development:
+
+```json
+{
+  "plugin": ["file:///path/to/opencode-conductor/src/index.ts"]
+}
+```
+
+## Plugin tools (31)
+
+| Category | Tools |
+|---|---|
+| Plans | `persist_final_plan`, `read_final_plan`, `discard_final_plan`, `persist_subplan`, `read_subplan`, `discard_subplan` |
+| Runs | `run_init`, `run_update`, `run_finish` |
+| Status | `status_write`, `status_read`, `status_done` |
+| Progress | `progress_update`, `progress_read`, `progress_done` |
+| Audits | `audit_write`, `audit_read`, `audit_done`, `audit_progress_update`, `audit_progress_read`, `audit_progress_done` |
+| Journal | `journal_write`, `journal_read`, `journal_done` |
+| Handoff | `handoff_write`, `handoff_read`, `handoff_done` |
+| Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher) |
+| Exploration | `explore_fast` |
+| Diagnostics | `context_usage` |
+
+The canonical tool list is enforced in `src/plugin-contract.test.ts`. The runtime smoke script (`scripts/runtime-smoke.ts`) asserts the tool count on every run.
+
+## Correlation IDs
+
+Every run record and status mirror carries a standard correlation envelope:
+
+```
+agent_run_id    correlation_id    workspace_id
+plan_id         plan_slug         wave_id
+task_id         agent_type
+```
+
+`plan_id` is additive alongside `plan_slug` (introduced in Wave 2). Legacy records without `plan_id` remain valid. Lifecycle artifacts additionally carry `lifecycle_object_id` and `concord_event_id`. All ID types are branded and validated through `@jackmazac/opencode-fleet-contracts` parsers.
+
+## CLI
+
+```bash
+conductor detect               # stack profile detection
+conductor doctor --json        # health report (canonical HealthReport shape)
+conductor status --json        # current state
+conductor policy export        # profile + policy JSON
+```
+
+Or via bun scripts:
+
+```bash
+bun run doctor -- --json
+bun run status -- --json
+```
+
+## Integration with the fleet
+
+Conductor writes all lifecycle and plan artifacts declaratively to disk. Engram ingests them through its own `lifecycle_ingest` tool — no shell-outs, no coupling at the process level. Concord collision events flow into Conductor through `lifecycle_concord_ingest`, which writes lifecycle artifacts and spine rows and returns structured refs. The `conflict_context` tool dispatches to Engram's native cross-tool handler for correlated memory retrieval; the dispatcher abstraction is at `src/workflow-tools/conflict-context.ts`. When Engram's native tool is unavailable (as in the current OpenCode SDK), `conflict_context` returns a structured `{ error: { code: "E_ENGRAM_NATIVE_UNAVAILABLE" } }` rather than shelling out.
+
+## Development
+
+```bash
+bun run check          # lint:no-zod + typecheck + tests (159+)
+bun run smoke:runtime  # assert plugin loads and exposes 31 tools
+bun run doctor -- --json
+bun run status -- --json
+```
+
+- `check` runs `lint:no-zod` (no Zod import in src/), then `typecheck` (tsgo --noEmit), then `bun test`.
+- `smoke:runtime` loads the plugin in a subprocess and asserts the tool count. It fails fast if a tool registration is missing.
+
+## Package structure
+
+The main package at the repo root exports the plugin. Four sub-packages support it:
+
+- `packages/lifecycle-contracts` — TypeScript types and parsers for lifecycle artifact shapes
+- `packages/spine` — SQLite event spine (`.opencode/spine/events.sqlite`) read/write
+- `packages/bridge-contracts` — bridge shape types shared across the fleet
+- `packages/conformance` — conformance test helpers for contract validation
+
+## License
+
+MIT
