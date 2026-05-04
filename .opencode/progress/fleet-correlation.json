@@ -1,0 +1,29 @@
+{
+  "waves": {
+    "W0": {
+      "status": "done",
+      "summary": "Wave 0 — Contracts Package Bootstrap — complete. 4 commits: opencode-fleet-contracts initial commit (44 tests), opencode-host-adapter ec39835 (21 tests, +10), opencode-fleet 3f88690 (32 tests, +19), opencode-conductor 1f4f4f8 on branch plan-persistence-tools (137 tests, +28). Fleet total: 234 tests, 0 failures. Zero type assertions. workspace_id algorithm verified matches Conductor's existing derivation. Legacy ID formats (non-ULID run_/corr_) accepted via isLegacyId. Fleet pass→ok + details→detail mapping verified. W0 unblocks W1.",
+      "updated": "2026-05-04T01:00:41.389Z"
+    },
+    "W1": {
+      "status": "done",
+      "summary": "Wave 1 complete. Host Adapter emits canonical FleetTelemetryEnvelope with all fleet IDs threaded, returns structured ToolFailureResult (legacyErrorString escape hatch), enforces timeouts via AbortSignal. Tests 21→31 (+10). All 4 downstream repos (conductor 139, engram 44, codemem 29+15 Rust, fleet 32) still green without changes. No migration breakage. Zero type assertions. Ready to fan out W2/W3/W5.",
+      "updated": "2026-05-04T01:57:54.571Z"
+    },
+    "W2": {
+      "status": "in-progress",
+      "summary": "Wave 2 — Conductor boundary + correlation — starting (parallel with W3 and W5). W2.4 (conflict_context refactor) uses a test-only fake dispatcher; real Engram native tool dispatch wires up when W3.3 lands (runtime-resolved, no build coupling).",
+      "updated": "2026-05-04T01:57:56.217Z"
+    },
+    "W3": {
+      "status": "in-progress",
+      "summary": "Wave 3 — Engram correlation + tool parity + passivity — starting (parallel with W2 and W5). Additive SQLite chunk_correlation sidecar, native conflict_context + lifecycle_ingest plugin tools, memory_context passive by default behind opt-in flag.",
+      "updated": "2026-05-04T01:57:57.784Z"
+    },
+    "W5": {
+      "status": "in-progress",
+      "summary": "Wave 5 — Codemem plugin tool parity + correlation protocol — starting (parallel with W2 and W3). Lift 4 CLI-only surfaces (api_surface, impact_cone, layer_boundaries, artifact) into plugin tools; add optional fleet IDs to shared protocol + daemon.",
+      "updated": "2026-05-04T01:57:59.762Z"
+    }
+  }
+}

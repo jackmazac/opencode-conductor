@@ -46,3 +46,24 @@ agent -p --model composer-2-fast --mode ask --output-format json --workspace <wo
 ## Extraction status
 
 This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools and the fast explore prompt/tool live here; future packaging waves can move remaining agent definitions and prompts here without changing behavior.
+
+## Ownership
+
+Conductor owns:
+
+- Doctrine and prescriptions, including stack detection and profile export.
+- Plans, subplans, and canonical plans in `.opencode/plans/` and `.opencode/subplans/`.
+- Lifecycle artifacts and the Conductor spine in `.opencode/lifecycle/` and `.opencode/spine/events.sqlite`.
+- Run records and status mirrors in `.opencode/runs/` and `.opencode/status/`.
+- Journal, handoff, audit, and progress artifacts.
+- Agent-directed exploration through `explore_fast`.
+
+Conductor does not own:
+
+- Memory retrieval or artifact ingestion; that is Engram. Conductor writes lifecycle artifacts declaratively, and Engram picks them up through its own ingest path.
+- Code-graph, drift, impact, or API-surface truth; that is Codemem.
+- Live edit locks and conflict guidance; that is Concord.
+- Install, doctor, and test orchestration across plugins; that is opencode-fleet.
+- Plugin-boundary defense; that is opencode-host-adapter.
+
+See the `fleet-correlation` plan for how Conductor interoperates with the other fleet plugins.

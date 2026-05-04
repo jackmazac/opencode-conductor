@@ -42,6 +42,7 @@ export const concordCollisionArtifactRefSchema = z
     protocol_version: z.string().min(1),
     schema_version: z.string().min(1),
     event_id: z.string().min(1),
+    lifecycle_object_id: z.string().min(1).optional(),
     ts: z.number().int().nonnegative(),
     event_type: z.string().min(1).optional(),
     file_path: z.string().min(1),

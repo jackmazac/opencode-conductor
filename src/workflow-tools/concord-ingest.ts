@@ -2,9 +2,41 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import {
+  type ArtifactRef,
+  buildArtifactRef,
+  parseConcordEventId,
+  parseLifecycleObjectId,
+} from "@jackmazac/opencode-fleet-contracts";
 import { tool } from "@opencode-ai/plugin";
 import { concordCollisionArtifactRefSchema } from "../../packages/lifecycle-contracts/src/external-sources.ts";
 import { createSpineStore } from "../../packages/spine/src/index.ts";
+
+const concordCollisionRowSchema = tool.schema
+  .object({
+    id: tool.schema.number().int().nonnegative(),
+    ts: tool.schema.number().int().nonnegative(),
+    eventType: tool.schema.string().min(1),
+    requestingSession: tool.schema.string().min(1),
+    requestingCorrelationId: tool.schema.string().min(1).optional(),
+    requestingPlanRef: tool.schema.string().min(1).optional(),
+    requestingIntent: tool.schema.string().min(1),
+    holdingSession: tool.schema.string().min(1).optional(),
+    holdingCorrelationId: tool.schema.string().min(1).optional(),
+    holdingPlanRef: tool.schema.string().min(1).optional(),
+    holdingIntent: tool.schema.string().min(1).optional(),
+    filePath: tool.schema.string().min(1),
+    requestedRange: tool.schema.string().min(1),
+    conflictingRange: tool.schema.string().min(1),
+    resolution: tool.schema.enum(["rejected", "waited_then_acquired", "downgraded"]),
+    waitMs: tool.schema.number().int().nonnegative().optional(),
+    guidanceEmitted: tool.schema.string().min(1).optional(),
+  })
+  .passthrough();
+
+const eventsResponseSchema = tool.schema.object({
+  rows: tool.schema.array(concordCollisionRowSchema).default([]),
+});
 
 type ConcordCollisionRow = {
   id: number;
@@ -25,8 +57,6 @@ type ConcordCollisionRow = {
   waitMs?: number;
   guidanceEmitted?: string;
 };
-
-type EventsResponse = { rows: ConcordCollisionRow[] };
 
 function sha256(value: string) {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -55,12 +85,13 @@ function parseRange(value: string) {
   };
 }
 
-function collisionArtifact(row: ConcordCollisionRow, spineSeq?: number) {
+function collisionArtifact(row: ConcordCollisionRow, ids: ConcordIds, spineSeq?: number) {
   return concordCollisionArtifactRefSchema.parse({
     source: "concord",
     protocol_version: "1",
     schema_version: "1",
-    event_id: String(row.id),
+    event_id: ids.concordEventId,
+    lifecycle_object_id: ids.lifecycleObjectId,
     ts: row.ts,
     event_type: row.eventType,
     file_path: row.filePath,
@@ -87,6 +118,20 @@ function collisionArtifact(row: ConcordCollisionRow, spineSeq?: number) {
         }
       : undefined,
   });
+}
+
+type ConcordIds = {
+  concordEventId: string;
+  lifecycleObjectId: string;
+};
+
+function concordIds(row: ConcordCollisionRow): ConcordIds {
+  const concord = parseConcordEventId(`concord:${row.id}`);
+  if (!concord.ok) throw new Error(`invalid Concord event id ${row.id}: ${concord.reason}`);
+  const lifecycle = parseLifecycleObjectId(`concord-event:${concord.value}`);
+  if (!lifecycle.ok)
+    throw new Error(`invalid lifecycle object id for ${concord.value}: ${lifecycle.reason}`);
+  return { concordEventId: concord.value, lifecycleObjectId: lifecycle.value };
 }
 
 function runConcord(args: {
@@ -159,12 +204,16 @@ export const ingest = tool({
         correlationId: args.correlation_id,
         fileGlob: args.file_glob,
       });
-    const response = JSON.parse(raw) as EventsResponse;
-    const rows = Array.isArray(response.rows) ? response.rows : [];
+    const parsed: unknown = JSON.parse(raw);
+    const response = eventsResponseSchema.parse(parsed);
+    const rows = response.rows;
     const artifacts = lifecycleDir(worktree);
     const dryRun = args.dry_run === true;
     let written = 0;
     const spineSeqs: number[] = [];
+    const artifactRefs: ArtifactRef[] = [];
+    const lifecycleObjectIds: string[] = [];
+    const concordEventIds: string[] = [];
 
     if (!dryRun) {
       await mkdir(artifacts, { recursive: true });
@@ -179,7 +228,10 @@ export const ingest = tool({
         });
     try {
       for (const row of rows) {
-        const baseArtifact = collisionArtifact(row);
+        const ids = concordIds(row);
+        concordEventIds.push(ids.concordEventId);
+        lifecycleObjectIds.push(ids.lifecycleObjectId);
+        const baseArtifact = collisionArtifact(row, ids);
         const content = JSON.stringify(baseArtifact, null, 2);
         const event = store?.appendEvent({
           session_id: row.requestingSession,
@@ -190,18 +242,25 @@ export const ingest = tool({
           epoch_id: store.getCurrentEpoch(),
           snapshot_id: sha256(content),
           tool_call_id: `concord:${row.id}`,
+          lifecycle_object_id: ids.lifecycleObjectId,
           plugin: "concord",
           kind: "concord.collision.detected",
           ts: row.ts,
           payload_hash: sha256(content),
         });
-        const artifact = collisionArtifact(row, event?.seq);
+        const artifact = collisionArtifact(row, ids, event?.seq);
         if (event) spineSeqs.push(event.seq);
+        const jsonPath = path.join(artifacts, `${row.id}.json`);
+        const artifactContent = JSON.stringify(artifact, null, 2);
+        artifactRefs.push(
+          buildArtifactRef({
+            kind: "concord_collision",
+            path: path.relative(worktree, jsonPath),
+            hash: sha256(artifactContent),
+          }),
+        );
         if (!dryRun) {
-          await Bun.write(
-            path.join(artifacts, `${row.id}.json`),
-            JSON.stringify(artifact, null, 2),
-          );
+          await Bun.write(jsonPath, artifactContent);
           if (row.guidanceEmitted)
             await Bun.write(path.join(artifacts, `${row.id}.xml`), row.guidanceEmitted);
           written += 1;
@@ -221,10 +280,12 @@ export const ingest = tool({
     return JSON.stringify(
       {
         dry_run: dryRun,
+        artifact_refs: artifactRefs,
+        lifecycle_object_ids: lifecycleObjectIds,
+        concord_event_ids: concordEventIds,
+        spine_seq: spineSeqs,
         rows: rows.length,
         artifacts_written: written,
-        artifact_dir: path.relative(context.directory, artifacts),
-        spine_seqs: spineSeqs,
       },
       null,
       2,

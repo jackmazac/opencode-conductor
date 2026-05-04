@@ -2,13 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { parsePlanId } from "@jackmazac/opencode-fleet-contracts";
 import { tool } from "@opencode-ai/plugin";
+import { readPlanIndex } from "../plan-artifacts.ts";
 
 type RunRecord = {
   schema_version: 1;
   agent_run_id: string;
   correlation_id: string;
   workspace_id: string;
+  plan_id?: string;
   plan_slug?: string;
   wave_id?: string;
   task_id?: string;
@@ -30,6 +33,7 @@ type RunStatus = "initialized" | "in_progress" | "done" | "blocked" | "cancelled
 type StatusMirror = {
   slug: string;
   goal?: string;
+  plan_id?: string;
   plan?: string;
   wave?: string;
   current: string;
@@ -91,7 +95,9 @@ function runPath(directory: string, id: string) {
 async function loadRun(directory: string, id: string): Promise<RunRecord> {
   const file = runPath(directory, id);
   if (!fs.existsSync(file)) throw new Error(`run not found: ${id}`);
-  return JSON.parse(await Bun.file(file).text()) as RunRecord;
+  const parsed: unknown = JSON.parse(await Bun.file(file).text());
+  if (!isRunRecord(parsed)) throw new Error(`invalid run record: ${id}`);
+  return parsed;
 }
 
 async function writeRun(
@@ -117,6 +123,7 @@ function statusMirror(record: RunRecord, runFile: string): StatusMirror {
   return {
     slug: statusSlug(record.agent_run_id),
     goal: record.goal,
+    plan_id: record.plan_id,
     plan: record.plan_slug,
     wave: record.wave_id,
     current: record.current ?? `${record.status} ${record.agent_type}`,
@@ -145,6 +152,10 @@ export const init = tool({
       .string()
       .optional()
       .describe("Canonical plan slug, if this run belongs to a plan"),
+    plan_id: tool.schema
+      .string()
+      .optional()
+      .describe("Canonical plan id, if already known; resolved from plan_slug when omitted."),
     wave_id: tool.schema.string().optional().describe("Plan wave/task identifier, if applicable"),
     task_id: tool.schema.string().optional().describe("External task/subagent id, if available"),
     goal: tool.schema.string().optional().describe("Short run goal"),
@@ -160,11 +171,13 @@ export const init = tool({
   async execute(args, context) {
     const id = runId();
     const now = new Date().toISOString();
+    const planId = await resolvePlanId(context.directory, args.plan_id, args.plan_slug);
     const record: RunRecord = {
       schema_version: 1,
       agent_run_id: id,
       correlation_id: args.correlation_id ?? `corr_${id.slice(4)}`,
       workspace_id: workspaceId(context.directory),
+      plan_id: planId,
       plan_slug: args.plan_slug,
       wave_id: args.wave_id,
       task_id: args.task_id,
@@ -188,6 +201,72 @@ export const init = tool({
     );
   },
 });
+
+async function resolvePlanId(
+  directory: string,
+  explicitPlanId: string | undefined,
+  planSlug: string | undefined,
+): Promise<string | undefined> {
+  if (explicitPlanId !== undefined) {
+    const parsed = parsePlanId(explicitPlanId);
+    if (!parsed.ok) throw new Error(`invalid plan_id "${explicitPlanId}": ${parsed.reason}`);
+    return parsed.value;
+  }
+  if (planSlug === undefined) return undefined;
+  const index = await readPlanIndex(directory);
+  return index.entries[planSlug]?.plan_id;
+}
+
+function isRunRecord(value: unknown): value is RunRecord {
+  if (!isRecord(value)) return false;
+  return (
+    value.schema_version === 1 &&
+    typeof value.agent_run_id === "string" &&
+    typeof value.correlation_id === "string" &&
+    typeof value.workspace_id === "string" &&
+    optionalString(value.plan_id) &&
+    optionalString(value.plan_slug) &&
+    optionalString(value.wave_id) &&
+    optionalString(value.task_id) &&
+    typeof value.agent_type === "string" &&
+    optionalString(value.goal) &&
+    isStringArray(value.paths) &&
+    isRunStatus(value.status) &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string" &&
+    optionalString(value.current) &&
+    optionalStringArray(value.completed) &&
+    optionalStringArray(value.pending) &&
+    optionalStringArray(value.blockers) &&
+    optionalString(value.finished_at)
+  );
+}
+
+function isRunStatus(value: unknown): value is RunStatus {
+  return (
+    value === "initialized" ||
+    value === "in_progress" ||
+    value === "done" ||
+    value === "blocked" ||
+    value === "cancelled"
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function optionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function optionalStringArray(value: unknown): value is string[] | undefined {
+  return value === undefined || isStringArray(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export const update = tool({
   description:

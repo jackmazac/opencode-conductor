@@ -83,6 +83,11 @@ export const appendEventInputSchema = z
     tool_call_id: z.string().optional(),
 
     /**
+     * Optional canonical lifecycle object identity associated with this event.
+     */
+    lifecycle_object_id: z.string().min(1).optional(),
+
+    /**
      * Plugin or module that produced this event, e.g. `origin`, `seal`, `portage`.
      * Core spine events use `core`.
      */

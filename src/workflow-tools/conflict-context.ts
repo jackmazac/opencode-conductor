@@ -1,41 +1,28 @@
 import path from "node:path";
 import { tool } from "@opencode-ai/plugin";
 
-type CommandResult = {
-  command: string;
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-};
+type EngramDispatch = (toolName: "conflict_context", args: unknown) => Promise<unknown>;
 
-function shellQuote(value: string) {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
+let engramDispatch: EngramDispatch | null = null;
+
+export function __test_setEngramDispatch(fn: EngramDispatch | null): void {
+  engramDispatch = fn;
 }
 
-function run(command: string, args: string[], cwd: string): CommandResult {
-  const rendered = [command, ...args.map(shellQuote)].join(" ");
-  const result = Bun.spawnSync(["sh", "-lc", rendered], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  });
-  const stdout = new TextDecoder().decode(result.stdout).trim();
-  const stderr = new TextDecoder().decode(result.stderr).trim();
-  return { command: rendered, exit_code: result.exitCode, stdout, stderr };
-}
-
-function pushOptional(args: string[], flag: string, value: string | number | undefined) {
-  if (value !== undefined && value !== "") args.push(flag, String(value));
-}
-
-function pushRepeated(args: string[], flag: string, values: string[] | undefined) {
-  for (const value of values ?? []) if (value) args.push(flag, value);
+function unavailableResult() {
+  return {
+    ok: false,
+    error: {
+      code: "E_ENGRAM_NATIVE_UNAVAILABLE",
+      message:
+        "Engram native conflict_context tool not yet wired. Wave 3 ships the native tool; Wave 2 replaces the prior shell path.",
+    },
+  };
 }
 
 export const context = tool({
   description:
-    "Fetch conflict-aware Engram context using Concord/lifecycle correlation fields. Optionally ingests lifecycle artifacts first, then runs one Engram context query.",
+    "Fetch conflict-aware Engram context using Concord/lifecycle correlation fields through Engram's native conflict_context tool.",
   args: {
     project_id: tool.schema.string().describe("Engram project id for the workspace"),
     worktree: tool.schema
@@ -71,76 +58,26 @@ export const context = tool({
       .array(tool.schema.string())
       .optional()
       .describe("Concord collision event ids"),
-    engram_command: tool.schema.string().optional().describe("Engram command. Defaults to engram."),
+    engram_command: tool.schema
+      .string()
+      .optional()
+      .describe("Deprecated Wave 1 shell option retained for signature compatibility; ignored."),
     ingest_artifacts: tool.schema
       .boolean()
       .optional()
-      .describe(
-        "Run engram ingest-artifacts for lifecycle/concord artifacts before context. Defaults true.",
-      ),
+      .describe("Deprecated Wave 1 shell option retained for signature compatibility; ignored."),
     json: tool.schema.boolean().optional().describe("Request JSON output from Engram context."),
   },
   async execute(args, contextArg) {
-    const worktree = path.resolve(args.worktree ?? contextArg.directory);
-    const command = args.engram_command ?? "engram";
-    const ingestArtifacts = args.ingest_artifacts !== false;
-    const ingestArgs = [
-      "ingest-artifacts",
-      "--apply",
-      "--kind",
-      "lifecycle,concord_collision,concord_guidance",
-      "--project-id",
-      args.project_id,
-      "--worktree",
-      worktree,
-    ];
-    const contextArgs = [
-      "context",
-      args.query ?? "Concord conflict context",
-      "--project-id",
-      args.project_id,
-      "--worktree",
-      worktree,
-      "--mode",
-      args.mode ?? "debug",
-      "--limit",
-      String(args.limit ?? 12),
-      "--budget",
-      String(args.budget_chars ?? 6000),
-    ];
-    pushOptional(contextArgs, "--correlation-id", args.correlation_id);
-    pushOptional(contextArgs, "--session-id", args.session_id);
-    pushOptional(contextArgs, "--plan-slug", args.plan_slug);
-    pushOptional(contextArgs, "--wave-id", args.wave_id);
-    pushOptional(contextArgs, "--agent-run-id", args.agent_run_id);
-    pushRepeated(contextArgs, "--lifecycle-object-id", args.lifecycle_object_ids);
-    pushRepeated(contextArgs, "--artifact-ref", args.artifact_refs);
-    pushRepeated(contextArgs, "--concord-event-id", args.concord_event_ids);
-    if (args.json) contextArgs.push("--json");
+    const dispatch = engramDispatch;
+    if (!dispatch) return JSON.stringify(unavailableResult(), null, 2);
 
-    const ingest = ingestArtifacts ? run(command, ingestArgs, worktree) : undefined;
-    if (ingest && ingest.exit_code !== 0) {
-      throw new Error(
-        `engram ingest-artifacts failed (${ingest.exit_code}): ${ingest.stderr || ingest.stdout}`,
-      );
-    }
-    const bundle = run(command, contextArgs, worktree);
-    if (bundle.exit_code !== 0) {
-      throw new Error(
-        `engram context failed (${bundle.exit_code}): ${bundle.stderr || bundle.stdout}`,
-      );
-    }
-    return JSON.stringify(
-      {
-        worktree,
-        project_id: args.project_id,
-        ingest: ingest
-          ? { command: ingest.command, output: ingest.stdout, stderr: ingest.stderr }
-          : { skipped: true },
-        context: { command: bundle.command, output: bundle.stdout, stderr: bundle.stderr },
-      },
-      null,
-      2,
-    );
+    // TODO(Wave 3): wire this module-local dispatcher to OpenCode's native tool dispatch
+    // once the SDK exposes an in-tool dispatch surface for Engram's conflict_context.
+    const result = await dispatch("conflict_context", {
+      ...args,
+      worktree: path.resolve(args.worktree ?? contextArg.directory),
+    });
+    return typeof result === "string" ? result : JSON.stringify(result, null, 2);
   },
 });

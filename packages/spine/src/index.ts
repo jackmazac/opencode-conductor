@@ -83,6 +83,7 @@ const eventRowSchema = z.object({
   epoch_id: sqliteNumberSchema,
   snapshot_id: z.string().nullable(),
   tool_call_id: z.string().nullable(),
+  lifecycle_object_id: z.string().nullable(),
   plugin: z.string(),
   kind: z.string(),
   ts: sqliteNumberSchema,
@@ -145,11 +146,12 @@ export function createSpineStore(options: SpineStoreOptions): SpineStore {
             epoch_id,
             snapshot_id,
             tool_call_id,
+            lifecycle_object_id,
             plugin,
             kind,
             ts,
             payload_hash
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           event.session_id,
@@ -161,6 +163,7 @@ export function createSpineStore(options: SpineStoreOptions): SpineStore {
           event.epoch_id,
           event.snapshot_id ?? null,
           event.tool_call_id ?? null,
+          event.lifecycle_object_id ?? null,
           event.plugin,
           event.kind,
           event.ts,
@@ -179,7 +182,7 @@ export function createSpineStore(options: SpineStoreOptions): SpineStore {
         return database
           .query(
             `SELECT seq, session_id, correlation_id, actor_id, workspace_id, workspace_root,
-              parent_seq, epoch_id, snapshot_id, tool_call_id, plugin, kind, ts, payload_hash
+              parent_seq, epoch_id, snapshot_id, tool_call_id, lifecycle_object_id, plugin, kind, ts, payload_hash
              FROM events
              WHERE seq > ?
              ORDER BY seq ASC`,
@@ -192,7 +195,7 @@ export function createSpineStore(options: SpineStoreOptions): SpineStore {
       return database
         .query(
           `SELECT seq, session_id, correlation_id, actor_id, workspace_id, workspace_root,
-            parent_seq, epoch_id, snapshot_id, tool_call_id, plugin, kind, ts, payload_hash
+            parent_seq, epoch_id, snapshot_id, tool_call_id, lifecycle_object_id, plugin, kind, ts, payload_hash
            FROM events
            WHERE seq > ?
              AND epoch_id = ?
@@ -393,6 +396,7 @@ function initializeDatabase(database: Database) {
       epoch_id INTEGER NOT NULL REFERENCES epochs(epoch_id),
       snapshot_id TEXT,
       tool_call_id TEXT,
+      lifecycle_object_id TEXT,
       plugin TEXT NOT NULL,
       kind TEXT NOT NULL,
       ts INTEGER NOT NULL,
@@ -428,6 +432,11 @@ function initializeDatabase(database: Database) {
     INSERT OR IGNORE INTO current_epoch (id, epoch_id)
     VALUES (1, 0);
   `);
+  try {
+    database.exec("ALTER TABLE events ADD COLUMN lifecycle_object_id TEXT");
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("duplicate column")) throw error;
+  }
 }
 
 function ensureWorkspace(event: AppendEventInput, options: SpineStoreOptions) {
@@ -448,7 +457,7 @@ function getEventBySeq(database: Database, seq: number): PluginEvent {
   const row = database
     .query(
       `SELECT seq, session_id, correlation_id, actor_id, workspace_id, workspace_root,
-        parent_seq, epoch_id, snapshot_id, tool_call_id, plugin, kind, ts, payload_hash
+        parent_seq, epoch_id, snapshot_id, tool_call_id, lifecycle_object_id, plugin, kind, ts, payload_hash
        FROM events
        WHERE seq = ?`,
     )
@@ -477,6 +486,7 @@ function rowToPluginEvent(row: z.infer<typeof eventRowSchema>): PluginEvent {
     ...(row.parent_seq === null ? {} : { parent_seq: row.parent_seq }),
     ...(row.snapshot_id === null ? {} : { snapshot_id: row.snapshot_id }),
     ...(row.tool_call_id === null ? {} : { tool_call_id: row.tool_call_id }),
+    ...(row.lifecycle_object_id === null ? {} : { lifecycle_object_id: row.lifecycle_object_id }),
   });
 }
 
