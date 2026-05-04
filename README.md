@@ -43,6 +43,10 @@ agent -p --model composer-2-fast --mode ask --output-format json --workspace <wo
 
 `explore_fast` does not pass `--force` or `--yolo`, constrains optional focus paths to the active workspace, and bounds returned output before handing it back to OpenCode.
 
+## Context usage tool
+
+Conductor registers `context_usage`, the orchestration/context-budget diagnostic previously kept in the user config repo. It reads the current OpenCode session through the plugin host client, groups estimated token usage by system, user, assistant, tool output, and reasoning content, and returns a concise visual summary for the caller to analyze.
+
 ## Extraction status
 
 This package is a clean extraction target for the current `/Users/jack.mazac/.config/opencode` orchestration setup. Plan artifact tools and the fast explore prompt/tool live here; future packaging waves can move remaining agent definitions and prompts here without changing behavior.
@@ -57,6 +61,7 @@ Conductor owns:
 - Run records and status mirrors in `.opencode/runs/` and `.opencode/status/`.
 - Journal, handoff, audit, and progress artifacts.
 - Agent-directed exploration through `explore_fast`.
+- Context-budget diagnostics through `context_usage`.
 
 Conductor does not own:
 

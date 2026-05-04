@@ -38,8 +38,8 @@ const pathIdentitySchema = lifecycleObjectBaseSchema
   });
 
 export const lifecycleObjectIdSchema = z.discriminatedUnion("kind", [
-  pathIdentitySchema.extend({ kind: z.literal("source-file") }),
-  pathIdentitySchema.extend({ kind: z.literal("generated-output") }),
+  pathIdentitySchema.safeExtend({ kind: z.literal("source-file") }),
+  pathIdentitySchema.safeExtend({ kind: z.literal("generated-output") }),
   lifecycleObjectBaseSchema.extend({
     kind: z.literal("package-export"),
     vendor: z.literal("typescript"),

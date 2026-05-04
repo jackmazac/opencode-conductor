@@ -3,13 +3,16 @@ import * as audit from "./workflow-tools/audit";
 import * as auditProgress from "./workflow-tools/audit-progress";
 import * as conflictContext from "./workflow-tools/conflict-context";
 import * as concordIngest from "./workflow-tools/concord-ingest";
+import { createContextUsageTool, type ContextUsageClient } from "./workflow-tools/context-usage";
 import * as handoff from "./workflow-tools/handoff";
 import * as journal from "./workflow-tools/journal";
 import * as progress from "./workflow-tools/progress";
 import * as run from "./workflow-tools/run";
 import * as status from "./workflow-tools/status";
 
-export function createWorkflowArtifactTools(): Record<string, ToolDefinition> {
+export function createWorkflowArtifactTools(
+  input: { contextUsageClient?: ContextUsageClient } = {},
+): Record<string, ToolDefinition> {
   return {
     audit_write: audit.write,
     audit_read: audit.read,
@@ -18,6 +21,7 @@ export function createWorkflowArtifactTools(): Record<string, ToolDefinition> {
     audit_progress_read: auditProgress.read,
     audit_progress_done: auditProgress.done,
     conflict_context: conflictContext.context,
+    context_usage: createContextUsageTool(input.contextUsageClient),
     lifecycle_concord_ingest: concordIngest.ingest,
     handoff_write: handoff.write,
     handoff_read: handoff.read,

@@ -3,6 +3,7 @@ import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
 import { runExploreFast, type ExploreFastProcessRunner } from "./explore-fast";
 import { createPlanArtifactStore } from "./plan-artifacts";
 import { createWorkflowArtifactTools } from "./workflow-artifacts";
+import type { ContextUsageClient } from "./workflow-tools/context-usage";
 
 const subplans = createPlanArtifactStore({
   folder: "subplans",
@@ -20,12 +21,13 @@ const finalPlans = createPlanArtifactStore({
 
 export type ConductorPluginDeps = {
   exploreFastRunner?: ExploreFastProcessRunner;
+  contextUsageClient?: ContextUsageClient;
 };
 
 export function createConductorHooks(deps: ConductorPluginDeps = {}) {
   return {
     tool: {
-      ...createWorkflowArtifactTools(),
+      ...createWorkflowArtifactTools({ contextUsageClient: deps.contextUsageClient }),
       explore_fast: tool({
         description:
           "Run fast read-only codebase exploration through Cursor CLI headless mode using Composer 2 Fast and the packaged explore prompt.",
@@ -159,8 +161,8 @@ export function createConductorHooks(deps: ConductorPluginDeps = {}) {
   };
 }
 
-export const ConductorPlugin: Plugin = async () => {
-  return createConductorHooks();
+export const ConductorPlugin: Plugin = async ({ client }) => {
+  return createConductorHooks({ contextUsageClient: client });
 };
 
 export default wrapPlugin(ConductorPlugin, { name: "conductor" });

@@ -31,6 +31,7 @@ describe("ConductorPlugin tools", () => {
       "audit_progress_read",
       "audit_progress_done",
       "conflict_context",
+      "context_usage",
       "lifecycle_concord_ingest",
       "handoff_write",
       "handoff_read",

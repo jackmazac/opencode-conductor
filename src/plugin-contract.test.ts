@@ -36,6 +36,7 @@ runPluginContractTests({
     "read_final_plan",
     "discard_final_plan",
     "conflict_context",
+    "context_usage",
     "lifecycle_concord_ingest",
     "explore_fast",
   ],

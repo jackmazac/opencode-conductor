@@ -52,7 +52,7 @@
     "@jackmazac/opencode-fleet-contracts": "file:../opencode-fleet-contracts",
     "@jackmazac/opencode-host-adapter": "file:/Users/jack.mazac/Developer/opencode-host-adapter",
     "@opencode-ai/plugin": "1.14.31",
-    "zod": "^4.3.6"
+    "zod": "4.1.8"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
+import { makeHealthReport, type HealthCheck } from "@jackmazac/opencode-fleet-contracts";
 import { detectStackProfile, doctorStackProfile, exportPolicy } from "./profile.ts";
 
 async function main(): Promise<void> {
@@ -17,14 +18,23 @@ async function main(): Promise<void> {
 
   const profile = detectStackProfile(root);
 
-  if (command === "detect" || command === "status") {
+  if (command === "detect") {
     process.stdout.write(json ? `${JSON.stringify(profile, null, 2)}\n` : formatProfile(profile));
+    return;
+  }
+
+  if (command === "status") {
+    process.stdout.write(
+      json ? `${JSON.stringify(statusReport(profile), null, 2)}\n` : formatProfile(profile),
+    );
     return;
   }
 
   if (command === "doctor") {
     const checks = doctorStackProfile(profile);
-    process.stdout.write(json ? `${JSON.stringify({ checks }, null, 2)}\n` : formatChecks(checks));
+    process.stdout.write(
+      json ? `${JSON.stringify(doctorReport(checks), null, 2)}\n` : formatChecks(checks),
+    );
     process.exit(checks.some((check) => check.status === "fail") ? 1 : 0);
   }
 
@@ -49,6 +59,49 @@ function formatProfile(profile: ReturnType<typeof detectStackProfile>): string {
 
 function formatChecks(checks: ReturnType<typeof doctorStackProfile>): string {
   return `${checks.map((check) => `[${check.status.padEnd(4)}] ${check.name}: ${check.message}`).join("\n")}\n`;
+}
+
+function statusReport(profile: ReturnType<typeof detectStackProfile>) {
+  const checks: HealthCheck[] = [
+    healthCheck("profile", "ok", `detected stack profile for ${profile.root}`),
+    profile.packageManager
+      ? healthCheck("package manager", "ok", profile.packageManager.preferred)
+      : healthCheck("package manager", "warn", "not detected"),
+    profile.typecheck
+      ? healthCheck("typecheck command", "ok", profile.typecheck.preferred)
+      : healthCheck("typecheck command", "warn", "not detected"),
+    profile.lint
+      ? healthCheck("lint command", "ok", profile.lint.preferred)
+      : healthCheck("lint command", "skip", "not configured"),
+  ];
+  const now = new Date().toISOString();
+  return makeHealthReport({
+    source: "conductor.cli.status",
+    checks,
+    started_at: now,
+    finished_at: now,
+  });
+}
+
+function doctorReport(checks: ReturnType<typeof doctorStackProfile>) {
+  const now = new Date().toISOString();
+  return makeHealthReport({
+    source: "conductor.cli.doctor",
+    checks: checks.map((check) =>
+      healthCheck(check.name, healthStatus(check.status), check.message),
+    ),
+    started_at: now,
+    finished_at: now,
+  });
+}
+
+function healthCheck(name: string, status: HealthCheck["status"], message: string): HealthCheck {
+  return { name, status, message };
+}
+
+function healthStatus(status: "pass" | "warn" | "fail" | "skip"): HealthCheck["status"] {
+  if (status === "pass") return "ok";
+  return status;
 }
 
 function helpText(): string {

@@ -11,19 +11,34 @@
       "updated": "2026-05-04T01:57:54.571Z"
     },
     "W2": {
-      "status": "in-progress",
-      "summary": "Wave 2 — Conductor boundary + correlation — starting (parallel with W3 and W5). W2.4 (conflict_context refactor) uses a test-only fake dispatcher; real Engram native tool dispatch wires up when W3.3 lands (runtime-resolved, no build coupling).",
-      "updated": "2026-05-04T01:57:56.217Z"
+      "status": "done",
+      "summary": "Wave 2 complete: Conductor plan_id + lifecycle_object_id + declarative lifecycle + dispatcher conflict_context. 155 tests (+16). Committed bd6aa18 on plan-persistence-tools.",
+      "updated": "2026-05-04T03:27:23.907Z"
     },
     "W3": {
-      "status": "in-progress",
-      "summary": "Wave 3 — Engram correlation + tool parity + passivity — starting (parallel with W2 and W5). Additive SQLite chunk_correlation sidecar, native conflict_context + lifecycle_ingest plugin tools, memory_context passive by default behind opt-in flag.",
-      "updated": "2026-05-04T01:57:57.784Z"
+      "status": "done",
+      "summary": "Wave 3 complete: Engram chunk_correlation sidecar + native conflict_context/lifecycle_ingest tools + passive memory_context default. 49 tests (+5). Committed c59abf5. Evals 100% (no regression).",
+      "updated": "2026-05-04T03:27:25.721Z"
     },
     "W5": {
+      "status": "done",
+      "summary": "Wave 5 complete: Codemem 4 new plugin tools (api_surface, impact_cone, layer_boundaries, artifact), FleetCorrelation in shared protocol, Rust accept-and-ignore. 38 TS + 17 Rust (+9/+2). Bench thresholds preserved + 3 new rows. Committed 6532862.",
+      "updated": "2026-05-04T03:27:29.856Z"
+    },
+    "W4": {
+      "status": "done",
+      "summary": "Wave 4 complete: Concord protocol+daemon fleet correlation, NDJSON mirror, heartbeat RPC, flattened error.concord, fleet.jsonc re-enabled. TS 5, Rust 16, live-smoke PASS, bench IPC p95 0.25ms/acquire p95 6.6us (well inside budgets). Concord dist/ built for plugin_ref. Awaiting commit.",
+      "updated": "2026-05-04T03:27:27.330Z"
+    },
+    "W6": {
+      "status": "done",
+      "summary": "Wave 6 complete: opencode-fleet ships real install (bun install), update, generate-opencode-json with lock sidecar, runtime contract validation, fleet_run_id on every command, command timeouts, strict hygiene, JSON Schema artifact, Fleet smoke. 51 tests (+19). Awaiting commit.",
+      "updated": "2026-05-04T03:27:31.764Z"
+    },
+    "W7": {
       "status": "in-progress",
-      "summary": "Wave 5 — Codemem plugin tool parity + correlation protocol — starting (parallel with W2 and W3). Lift 4 CLI-only surfaces (api_surface, impact_cone, layer_boundaries, artifact) into plugin tools; add optional fleet IDs to shared protocol + daemon.",
-      "updated": "2026-05-04T01:57:59.762Z"
+      "summary": "Wave 7 — ~/.config/opencode cleanup — starting. Regenerate opencode.json via W6 generate-opencode-json, sync fleet.jsonc expected_tools to actual W2/W3/W5 surfaces, move plugin/context-usage.ts into Conductor as context_usage tool, delete duplicate preflight, remove global .opencode/ artifacts (archive first), pin Zod, host-adapter library classification.",
+      "updated": "2026-05-04T03:27:33.905Z"
     }
   }
 }
