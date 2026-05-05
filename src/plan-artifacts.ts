@@ -57,7 +57,8 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
   const target = (directory: string, slug: string) => path.join(baseDir(directory), `${slug}.md`);
 
   return {
-    async write(directory: string, args: WritePlanArtifactArgs) {
+    async write(directory: string, rawArgs: unknown) {
+      const args = parseWriteArgs(rawArgs, config.artifactName);
       validateSlug(args.slug);
       const base = baseDir(directory);
       await mkdir(base, { recursive: true });
@@ -76,7 +77,8 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
       return `wrote ${config.artifactName} ${args.slug}\nfile: ${relative(directory, dest)}`;
     },
 
-    async read(directory: string, args: ReadPlanArtifactArgs) {
+    async read(directory: string, rawArgs: unknown) {
+      const args = parseReadArgs(rawArgs, config.artifactName);
       const slug = args.plan_id ? await slugForPlanId(directory, args.plan_id) : args.slug;
       if (slug) {
         validateSlug(slug);
@@ -113,7 +115,8 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
       });
     },
 
-    async discard(directory: string, args: DiscardPlanArtifactArgs) {
+    async discard(directory: string, rawArgs: unknown) {
+      const args = parseDiscardArgs(rawArgs, config.artifactName);
       if (args.slug) {
         validateSlug(args.slug);
         const dest = target(directory, args.slug);
@@ -140,6 +143,58 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
         .join("\n")}`;
     },
   };
+}
+
+function parseWriteArgs(args: unknown, artifactName: string): WritePlanArtifactArgs {
+  const record = requireArgsRecord(args, `${artifactName} write`);
+  const slug = requireStringArg(record, "slug", `${artifactName} write`);
+  const content = requireStringArg(record, "content", `${artifactName} write`);
+  return { slug, content };
+}
+
+function parseReadArgs(args: unknown, artifactName: string): ReadPlanArtifactArgs {
+  const record = optionalArgsRecord(args, `${artifactName} read`);
+  return {
+    slug: optionalStringArg(record, "slug", `${artifactName} read`),
+    plan_id: optionalStringArg(record, "plan_id", `${artifactName} read`),
+    section: optionalStringArg(record, "section", `${artifactName} read`),
+  };
+}
+
+function parseDiscardArgs(args: unknown, artifactName: string): DiscardPlanArtifactArgs {
+  const record = optionalArgsRecord(args, `${artifactName} discard`);
+  return { slug: optionalStringArg(record, "slug", `${artifactName} discard`) };
+}
+
+function requireArgsRecord(args: unknown, operation: string): Record<string, unknown> {
+  if (!isRecord(args)) throw new Error(`${operation} args must be an object`);
+  return args;
+}
+
+function optionalArgsRecord(args: unknown, operation: string): Record<string, unknown> {
+  if (args === undefined || args === null) return {};
+  return requireArgsRecord(args, operation);
+}
+
+function requireStringArg(
+  record: Record<string, unknown>,
+  field: string,
+  operation: string,
+): string {
+  const value = record[field];
+  if (typeof value !== "string") throw new Error(`${operation} arg "${field}" must be a string`);
+  return value;
+}
+
+function optionalStringArg(
+  record: Record<string, unknown>,
+  field: string,
+  operation: string,
+): string | undefined {
+  const value = record[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${operation} arg "${field}" must be a string`);
+  return value;
 }
 
 export async function readPlanIndex(root: string): Promise<PlanIndex> {

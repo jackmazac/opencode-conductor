@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertToolFailureResult, wrapPlugin } from "@jackmazac/opencode-host-adapter";
 import type { ExploreFastProcessRequest, ExploreFastProcessRunner } from "./explore-fast";
 import { createConductorHooks } from "./index";
 import { __test_setEngramDispatch } from "./workflow-tools/conflict-context";
@@ -19,6 +20,29 @@ describe("ConductorPlugin tools", () => {
     expect(hooks.tool?.discard_final_plan).toBeDefined();
     expect(hooks.tool?.explore_fast).toBeDefined();
     expect(hooks.tool?.explore_fast.description).toContain("Cursor CLI");
+  });
+
+  test("wrapped tools validate runtime args before workflow handlers execute", async () => {
+    const root = await mkdtemp(join(tmpdir(), "conductor-wrapped-args-"));
+    try {
+      const wrapped = wrapPlugin(async () => createConductorHooks(), {
+        name: "conductor-test",
+        telemetryDisabled: true,
+      });
+      const hooks = await wrapped({});
+      const progressUpdate = getTool(hooks, "progress_update");
+
+      const result = await progressUpdate.execute(undefined, toolContext(root));
+
+      assertToolFailureResult(result);
+      expect(result.tool).toBe("progress_update");
+      expect(result.error.name).toBe("ToolArgsValidationError");
+      expect(result.error.code).toBe("E_TOOL_ARGS_INVALID");
+      expect(result.error.message).toContain('arg "plan_slug"');
+      expect(await Bun.file(join(root, ".opencode", "progress")).exists()).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("preserves migrated workflow tool names", () => {
@@ -549,10 +573,10 @@ describe("ConductorPlugin tools", () => {
   });
 });
 
-type HooksUnderTest = ReturnType<typeof createConductorHooks>;
+type HooksUnderTest = { tool?: Record<string, unknown> };
 type ToolContextUnderTest = ReturnType<typeof toolContext>;
 type ToolUnderTest = {
-  execute(args: Record<string, unknown>, context: ToolContextUnderTest): Promise<unknown>;
+  execute(args: unknown, context: ToolContextUnderTest): Promise<unknown>;
 };
 
 function getTool(hooks: HooksUnderTest, name: string): ToolUnderTest {

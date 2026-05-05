@@ -190,6 +190,19 @@ describe("plan artifact storage", () => {
     ).toBe(false);
   });
 
+  test("validates final plan write args before writing", async () => {
+    await expect(finalPlans.write(directory, undefined)).rejects.toThrow(
+      "final plan write args must be an object",
+    );
+    await expect(finalPlans.write(directory, { slug: "missing-content" })).rejects.toThrow(
+      'final plan write arg "content" must be a string',
+    );
+
+    expect(
+      await Bun.file(path.join(directory, ".opencode", "plans", "missing-content.md")).exists(),
+    ).toBe(false);
+  });
+
   test("lists subplans and final plans without mixing stores", async () => {
     await subplans.write(directory, {
       slug: "draft-one",
