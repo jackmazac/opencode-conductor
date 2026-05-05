@@ -41,6 +41,7 @@
     "packages",
     "!packages/**/*.test.ts",
     "prompts",
+    "skills",
     "docs",
     "README.md",
     "LICENSE"

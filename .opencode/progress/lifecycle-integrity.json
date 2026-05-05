@@ -1,0 +1,14 @@
+{
+  "waves": {
+    "Wave 0": {
+      "status": "done",
+      "summary": "Committed 4e1a861 feat: add lifecycle event spine foundation. Added bridge-contracts, spine, docs, lifecycle plan update, package exports, and host-adapter contract test coverage.",
+      "updated": "2026-05-03T18:33:41.714Z"
+    },
+    "Wave 1": {
+      "status": "done",
+      "summary": "Committed 1b7166e feat: add lifecycle contract foundation. Added lifecycle config/object/artifact/decision/message contracts, Concord external evidence refs, conformance fixtures, source-of-truth docs, package exports, and plugin re-export. Validated with bun run check and final targeted reviewer PASS.",
+      "updated": "2026-05-03T18:50:06.012Z"
+    }
+  }
+}

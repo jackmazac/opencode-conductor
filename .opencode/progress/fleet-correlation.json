@@ -36,9 +36,9 @@
       "updated": "2026-05-04T03:27:31.764Z"
     },
     "W7": {
-      "status": "in-progress",
-      "summary": "Wave 7 — ~/.config/opencode cleanup — starting. Regenerate opencode.json via W6 generate-opencode-json, sync fleet.jsonc expected_tools to actual W2/W3/W5 surfaces, move plugin/context-usage.ts into Conductor as context_usage tool, delete duplicate preflight, remove global .opencode/ artifacts (archive first), pin Zod, host-adapter library classification.",
-      "updated": "2026-05-04T03:27:33.905Z"
+      "status": "done",
+      "summary": "Wave 7 complete + two hotfixes landed. All 8 waves (W0-W7) done. End-to-end validation: fleet:doctor PASS (25 ok), fleet:test PASS (30 ok), fleet:test:full-runtime 37 pass / 0 fail / 0 warn / 1 skip. 12 commits across 8 repos. Two runtime regressions found and fixed: Host Adapter args preservation (eb3f323) + Concord path normalization + daemon RPC id preservation (2150012). Both fixes include regression tests.",
+      "updated": "2026-05-04T04:15:30.267Z"
     }
   }
 }
