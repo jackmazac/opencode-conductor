@@ -166,7 +166,7 @@ If the orchestrator provided a task ID (e.g., `W2-T3`), use it as your status sl
 ## On startup
 Before substantive repo reads, edits, tests, or exploration:
 
-1. If your **task prompt** includes a **plan slug** (header line `Plan: ...` from any delegator), call **`read_final_plan` with that slug** — **required every time** for persisted final plans. Load the full canonical plan before interpreting your task in isolation. Ad-hoc delegations with no plan slug skip this step.
+1. If your task prompt has `Plan: <slug>`, call **`read_final_plan(<slug>)`** — **required every time** for plan-backed work; load the full canonical plan before interpreting your task in isolation. Ad-hoc delegations omit the header and skip this step. See orchestrator's `# Plan slug discipline` for the full producer-side contract.
 2. Call `status_read` only when the prompt says this is a resume/continuation, gives you a specific status slug, or you are recovering after compaction. Prefer `status_read({ slug })`; avoid broad `status_read` unless no slug is known.
 3. Call `journal_read` only when the delegation says prior decisions/contracts matter for this task, or when a plan explicitly references journal decisions. Do not use it as a default startup step.
 4. **MCP survey** — Follow `# MCP tools` above: note available MCP tools, pick only those relevant to this task, then proceed. Skip if your tool list has no MCP tools or the task is purely local files.

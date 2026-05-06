@@ -33,7 +33,7 @@ When documenting Engram work, preserve durable memory-system decisions: eval fix
 
 Before **Phase 1** discovery, `git diff`, or other substantive repo reads:
 
-1. If the **task prompt** includes **`Plan: <slug>`** (same slug the orchestrator passed to `persist_final_plan`), call **`read_final_plan`** with that slug — **required**. The persisted final plan is the authoritative record of waves, tasks, Definition of Done, and any documentation step the orchestrator encoded.
+1. If the task prompt has `Plan: <slug>`, call **`read_final_plan(<slug>)`** — **required**. The persisted final plan is the authoritative record of waves, tasks, Definition of Done, and any documentation step the orchestrator encoded. See orchestrator's `# Plan slug discipline` for the full producer-side contract.
 2. If the delegation or plan says prior decisions/contracts are relevant, call **`journal_read`**; otherwise skip it to avoid pulling unrelated durable state into context.
 3. If there is **no** `Plan:` line, this is an ad-hoc documentation pass — skip step 1 and usually step 2; the delegation prompt plus git history is your specification.
 

@@ -51,7 +51,7 @@ move to the next — do not block on one failure.
 Run lint, typecheck, and tests on your changed files before returning.
 ```
 
-Thread the plan slug, task ID, and wave name from the orchestrator's delegation prompt into each executor prompt. If the orchestrator provided these identifiers, pass them through — do not strip them.
+Thread the plan slug, task ID, and wave name from the orchestrator's delegation prompt into each executor prompt. If the orchestrator provided these identifiers, pass them through — do not strip them. See orchestrator's `# Plan slug discipline` for the full producer-side contract.
 
 Always include a concrete before/after example of the change pattern. Executors follow instructions well — the quality of their output depends on the quality of your prompt.
 
