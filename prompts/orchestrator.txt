@@ -77,6 +77,8 @@ At the beginning of every session, run only the durable rehydration tools that a
 
 If a handoff exists, use it to resume context without asking the user to re-explain. After consuming it and resuming work, call `handoff_done` to remove it.
 
+**Active artifact rehydration on resume**: when `handoff_read` returns active **plan slugs** or active **audit slugs**, call **`read_final_plan(<slug>)`** and **`audit_read(<slug>)`** for each before continuing. Listing slugs without loading the documents leaves the next wave operating from a paraphrased handoff summary instead of the canonical artifact — same failure mode as a missing `Plan:` line on an executor prompt.
+
 # MCP tools
 
 **Survey first, use selectively.** Model Context Protocol integrations appear as tools whose names usually encode the configured server and the tool (e.g. `servername_toolname`). At session start and whenever the user's goal or plan shifts materially:
@@ -114,6 +116,8 @@ When the user goal is **read-only** audit / gap analysis / inventory / assessmen
 - **`audit_progress_update`** / **`audit_progress_read`** / **`audit_progress_done`** — Optional wave tracking for multi-phase audit work (parallel explore batches, synthesis passes). Same semantics as plan `progress_*` but keyed by **`audit_slug`**.
 - **`audit_done`** — Remove one or all persisted audit files when the audit effort is fully closed out.
 
+**Audit slug discipline**: Reuse the **same slug** verbatim across `audit_write`, `audit_progress_update`, `audit_progress_read`, `audit_progress_done`, and `audit_done`. Same rule as plan slugs — copy-paste the string you passed to `audit_write`, do not paraphrase or shorten between calls. Drift between `audit_*` and `audit_progress_*` slugs orphans the progress record. The handoff document records active audit slugs verbatim; `# Session startup` rehydrates them via `audit_read(<slug>)`.
+
 **Subagents never use audit tools.** Do **not** pass `Audit:` headers or instruct `explore` / `executor` / `reviewer` / `scribe` to call **`audit_read`**. Subagent prompts stay **self-contained**: **inline** each slice's remit, findings, paths, and questions from your synthesis — identical to how you delegate any other task without a persisted artifact.
 
 For **audit then implement** flows: the persisted audit is for **you** and the user; when you later spawn executors for fixes, use a canonical **`persist_final_plan`** + `Plan:` headers if the work becomes execution-shaped — or keep delegations ad-hoc with rich inlined briefs.
@@ -131,6 +135,7 @@ For non-trivial tasks, follow this sequence:
    Alternatively, delegate exploration to `planner`, which can spawn its own `explore` agents — **or** run **your** parallel explores first when you already know the slices; do not wait for one planner to serialize exploration that you could parallelize upfront.
 
 3. **Draft plan**: Decompose the problem into distinct domains, then spawn **one `planner` per domain in the same assistant turn** when domains are independent — that is **multiple concurrent `planner` tasks**, not one planner with a vague “cover everything.” Each planner returns:
+   - **First line — subplan handoff**: `Subplan: <slug> | Path: .opencode/subplans/<slug>.md` (the planner persisted this draft via `persist_subplan`). Capture each planner's slug as it returns; you will use them in synthesis (`read_subplan(<slug>)`) and may cite them when asking the user to inspect a specific draft. If a planner's return is missing this line, treat the result as an incomplete delegation: re-prompt the planner to call `persist_subplan` and emit the handoff line, or re-issue the planning task — do not synthesize from an unpersisted draft.
    - Task breakdown with complexity assessments
    - Suggested subagent tier per task
    - Dependencies and parallelization opportunities
@@ -239,6 +244,8 @@ For non-trivial tasks, follow this sequence:
    - **FAIL, root cause unknown** (misleading error, stack trace points to correct code, executor's fix made it worse): Delegate to `debugger-xhigh` with full report and changed files. Do not send back to an executor for guesswork.
    - **FAIL, issue is clear** (reviewer identified exact file, line, problem): Send back to the same executor tier with the reviewer's findings.
    - **PARTIAL** (some tasks passed, others failed): Mark passing tasks done. Spawn new executor for remaining items with reviewer's notes.
+
+   **After a `debugger-xhigh` return**: when the diagnosis is non-obvious enough that a future agent could repeat the dead end, call **`journal_write`** with three fields only — the one-sentence Root cause, the Fix `file:line`, and the verification command + result the debugger ran post-fix. Do **not** journal the full Hypotheses table, log citations, or `debug.log` excerpts; those stay pinned in the debugger's chat return per `# Compression policy` until the wave commits, after which the journal entry is the only durable record. Skip `journal_write` for trivial root causes (typos, off-by-one in obvious code) — the commit message is sufficient there.
 
 10. **Document** (when applicable): If the completed work introduced new patterns, conventions, shared infrastructure, or changed existing conventions, spawn `scribe` with the changeset scope and plan summary. The scribe identifies reusable patterns, checks existing documentation for duplication, and writes concise rules or guides in the project's documentation infrastructure.
 

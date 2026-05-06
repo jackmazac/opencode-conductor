@@ -110,7 +110,9 @@ The system has several durable persistence tools. These survive compaction — d
 - **Session handoff** (`.opencode/handoff.md`): Session boundary document via `handoff_write`/`handoff_read`. If a handoff exists, note its presence. The next agent reads it directly.
 - **Subplans** (`.opencode/subplans/<slug>.md`): Planner draft plans via `persist_subplan`/`read_subplan`. List active subplan slugs only when planning is active or being resumed.
 - **Final plans** (`.opencode/plans/<slug>.md`): Canonical orchestrator-approved plans via `persist_final_plan`/`read_final_plan`. List active final plan slugs.
-- **Progress** (`.opencode/progress/<slug>.json`): Wave-level progress via `progress_update`/`progress_read`. List active progress slugs with wave counts.
+- **Audits** (`.opencode/audits/<slug>.md`): Persisted read-only audit reports via `audit_write`/`audit_read`. List active audit slugs only when audit work is active or being resumed.
+- **Audit progress** (`.opencode/audit-progress/<slug>.json`): Wave-level audit investigation progress via `audit_progress_update`/`audit_progress_read`. List active audit-progress slugs with wave counts. The slug **must** match the corresponding audit slug verbatim.
+- **Progress** (`.opencode/progress/<slug>.json`): Wave-level plan progress via `progress_update`/`progress_read`. List active progress slugs with wave counts.
 
 ---
 

@@ -19,6 +19,16 @@ These apply to every finding and every fix:
 - `explore` (Task): investigation for unfamiliar code paths
 - Task: spawn `explore` for broader unfamiliar-code investigations
 
+# On startup
+
+Before Phase 1 (toolchain discovery), tests, linters, or substantive file reads:
+
+1. If the **task prompt** includes a **`Plan: <slug>`** line (same slug the orchestrator passed to `persist_final_plan`), call **`read_final_plan`** with that slug — **required**. The persisted final plan is the authoritative source of wave-level verification commands and per-task Definition of Done. Phase 1 toolchain discovery is **layered on top of** the plan's commands, not a replacement for them: when the plan names exact `bun run ...` commands for the changed package, use those.
+2. If the delegation or plan says prior decisions/contracts are relevant, call **`journal_read`**; otherwise skip it to avoid pulling unrelated durable state into context.
+3. If there is **no** `Plan:` line, this is an ad-hoc validation pass — skip step 1 and usually step 2; the delegation prompt plus the discovered toolchain is your specification.
+
+See orchestrator's `# Plan slug discipline` for the full producer-side contract.
+
 # Methodology
 
 Follow all five phases in order. Do not skip phases even if early phases pass.
@@ -132,7 +142,10 @@ Before returning results, confirm each item YES/NO:
 1. `path/to/file:line` — [root cause] → [fix applied]
 
 ### Remaining issues
-1. `path/to/file:line` — [what is wrong] — [why it was not auto-fixed]
+R1. `path/to/file:line` — [what is wrong] — [why it was not auto-fixed]
+R2. `path/to/file:line` — [what is wrong] — [why it was not auto-fixed]
+
+Use these `R<n>` IDs when reporting back to the orchestrator. They are stable identifiers a follow-up validation pass can use to confirm `R2 resolved` (or that an executor's targeted fix closed `R1`). Number every remaining issue, even if there is only one.
 
 ### Toolchain notes
 [Missing configs, skipped checks, observations]

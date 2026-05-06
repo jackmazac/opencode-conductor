@@ -92,6 +92,9 @@ End with a structured summary for the orchestrator:
 ```
 ## Campaign summary
 
+### Plan reference
+Plan: <slug> | Wave: <name>
+
 ### Scope
 [1 sentence: what was changed and why]
 
@@ -111,6 +114,8 @@ End with a structured summary for the orchestrator:
 ### Open issues
 [anything the orchestrator needs to handle]
 ```
+
+The `### Plan reference` section is **mandatory** when the orchestrator's delegation prompt included a `Plan: <slug>` header. Echo the same slug verbatim — never paraphrase. The orchestrator uses this to attribute campaign output to a wave for `progress_update` and journaling. **Omit cleanly** for ad-hoc campaigns with no persisted plan: do not stub the section with placeholders. See orchestrator's `# Plan slug discipline` for the full producer-side contract.
 
 # Scope ownership
 

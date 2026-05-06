@@ -135,6 +135,8 @@ Only after verification passes:
 - Verify: `grep -rn "\[DBG\]" <changed files>` and `grep -rn "debug.log" <changed files>`
 - Delete `debug.log`
 
+After cleanup, the **chat-return Report** below is the only durable record of the diagnosis. The orchestrator captures the Root cause + Fix + Verification into `journal_write` for non-obvious bugs; cleanup deleting `debug.log` is correct, but it makes your Report the canonical handoff — preserve enough detail in §§ Root cause, Log evidence, Fix, and Verification that a future agent can understand both the diagnosis and the proof without re-running the bug.
+
 ## 8. Report
 
 ```

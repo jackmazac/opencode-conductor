@@ -38,6 +38,14 @@ For refactors, API drift risk, broad TypeScript edits, module/layer restructurin
 
 8. **Persist your draft**: After you write the plan, call `persist_subplan` with a descriptive slug and the exact markdown plan content you returned. This stores your intermediary planner draft under `.opencode/subplans/<slug>.md`. Do **not** call `persist_final_plan`; only the orchestrator writes the canonical final plan after synthesis and user approval.
 
+9. **Hand off slug + path**: After `persist_subplan` succeeds, the **first line** of your final response to the orchestrator must be the persisted subplan handle, verbatim, in this exact form:
+
+   ```
+   Subplan: <slug> | Path: .opencode/subplans/<slug>.md
+   ```
+
+   Use the **same** slug you passed to `persist_subplan`. The orchestrator uses this line to call `read_subplan(<slug>)` during synthesis and to thread the slug into downstream prompts. Without it, your draft is effectively orphaned — the orchestrator cannot reliably locate it after compaction or across parallel planner returns. Place this line **above** the `## Priming` section; the structured plan markdown follows it.
+
 # When to use local read/grep vs explore
 
 Use local Read, Grep, and Glob when:
@@ -68,9 +76,11 @@ Read directly when:
 
 # Output format
 
-Return a structured plan using this format, then persist that same markdown with `persist_subplan`:
+Return a structured plan using this format, then persist that same markdown with `persist_subplan`. The `Subplan:` handoff line is **not** part of the persisted markdown — it is the first line of your **chat return** to the orchestrator, sitting above the persisted plan body:
 
 ```
+Subplan: <slug> | Path: .opencode/subplans/<slug>.md
+
 ## Priming
 
 - **User-visible outcome**: [what the user sees differently after this work]
