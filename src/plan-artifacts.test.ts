@@ -18,6 +18,20 @@ const finalPlans = createPlanArtifactStore({
   readCap: 3000,
 });
 
+const brainstorms = createPlanArtifactStore({
+  folder: "brainstorms",
+  artifactName: "brainstorm",
+  missingMessage: "no brainstorms",
+  readCap: 3000,
+});
+
+const designs = createPlanArtifactStore({
+  folder: "designs",
+  artifactName: "design",
+  missingMessage: "no designs",
+  readCap: 3000,
+});
+
 let directory = "";
 
 beforeEach(async () => {
@@ -233,6 +247,102 @@ describe("plan artifact storage", () => {
     expect(subplanList).not.toContain("final-one");
     expect(finalPlanList).toContain("final-one | Final One");
     expect(finalPlanList).not.toContain("draft-one");
+  });
+});
+
+describe("brainstorm and design artifact storage", () => {
+  test("writes brainstorms and designs to separate directories without index sidecars", async () => {
+    const brainstormResult = await brainstorms.write(directory, {
+      slug: "auth-options",
+      content: "# Auth options\n\n- Session\n- JWT\n- mTLS",
+    });
+    const designResult = await designs.write(directory, {
+      slug: "design-system-v1",
+      content: "# Design system v1\n\n## Colors\n\n## Typography",
+    });
+
+    expect(brainstormResult).toContain("file: .opencode/brainstorms/auth-options.md");
+    expect(designResult).toContain("file: .opencode/designs/design-system-v1.md");
+    expect(
+      await Bun.file(path.join(directory, ".opencode", "brainstorms", "auth-options.md")).text(),
+    ).toContain("Session");
+    expect(
+      await Bun.file(path.join(directory, ".opencode", "designs", "design-system-v1.md")).text(),
+    ).toContain("Typography");
+
+    expect(await Bun.file(path.join(directory, ".opencode", "brainstorms", "index.json")).exists())
+      .toBe(false);
+    expect(await Bun.file(path.join(directory, ".opencode", "designs", "index.json")).exists())
+      .toBe(false);
+  });
+
+  test("rejects invalid slugs across new artifact kinds", async () => {
+    await expect(
+      brainstorms.write(directory, { slug: "Bad Slug", content: "# x\n" }),
+    ).rejects.toThrow('invalid slug "Bad Slug"');
+    await expect(
+      designs.write(directory, { slug: "Bad Slug", content: "# x\n" }),
+    ).rejects.toThrow('invalid slug "Bad Slug"');
+  });
+
+  test("validates write args for brainstorm and design before writing", async () => {
+    await expect(brainstorms.write(directory, undefined)).rejects.toThrow(
+      "brainstorm write args must be an object",
+    );
+    await expect(designs.write(directory, { slug: "missing" })).rejects.toThrow(
+      'design write arg "content" must be a string',
+    );
+  });
+
+  test("lists, reads sections, and discards brainstorms and designs without mixing kinds", async () => {
+    await brainstorms.write(directory, {
+      slug: "auth-options",
+      content: [
+        "# Auth options",
+        "",
+        "## Session",
+        "Cookie-based.",
+        "",
+        "## JWT",
+        "Stateless tokens.",
+      ].join("\n"),
+    });
+    await designs.write(directory, {
+      slug: "design-system-v1",
+      content: "# Design system v1\n\n## Colors\n\nBlue, green",
+    });
+
+    const brainstormList = await brainstorms.read(directory, {});
+    const designList = await designs.read(directory, {});
+    expect(brainstormList).toContain("auth-options | Auth options");
+    expect(brainstormList).not.toContain("design-system-v1");
+    expect(designList).toContain("design-system-v1 | Design system v1");
+    expect(designList).not.toContain("auth-options");
+
+    const sectionRead = await brainstorms.read(directory, {
+      slug: "auth-options",
+      section: "JWT",
+    });
+    expect(sectionRead).toContain("Stateless tokens.");
+    expect(sectionRead).not.toContain("Cookie-based.");
+
+    const discardOne = await brainstorms.discard(directory, { slug: "auth-options" });
+    expect(discardOne).toContain("removed brainstorm auth-options");
+    expect(
+      await Bun.file(path.join(directory, ".opencode", "brainstorms", "auth-options.md")).exists(),
+    ).toBe(false);
+
+    const discardAll = await designs.discard(directory, {});
+    expect(discardAll).toContain("removed 1 design files");
+  });
+
+  test("missing brainstorm and design slugs report cleanly", async () => {
+    expect(await brainstorms.read(directory, { slug: "ghost" })).toBe(
+      "no brainstorm file for ghost",
+    );
+    expect(await designs.read(directory, { slug: "ghost" })).toBe("no design file for ghost");
+    expect(await brainstorms.read(directory, {})).toBe("no brainstorms");
+    expect(await designs.read(directory, {})).toBe("no designs");
   });
 });
 

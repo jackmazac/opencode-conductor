@@ -18,6 +18,20 @@ const finalPlans = createPlanArtifactStore({
   readCap: 3000,
 });
 
+const brainstorms = createPlanArtifactStore({
+  folder: "brainstorms",
+  artifactName: "brainstorm",
+  missingMessage: "no brainstorms",
+  readCap: 3000,
+});
+
+const designs = createPlanArtifactStore({
+  folder: "designs",
+  artifactName: "design",
+  missingMessage: "no designs",
+  readCap: 3000,
+});
+
 export type ConductorPluginDeps = {
   contextUsageClient?: ContextUsageClient;
 };
@@ -120,6 +134,96 @@ export function createConductorHooks(deps: ConductorPluginDeps = {}) {
         },
         async execute(args, context) {
           return finalPlans.discard(context.directory, args);
+        },
+      }),
+      persist_brainstorm: tool({
+        description:
+          "Persist a brainstorm transcript or summary to .opencode/brainstorms/<slug>.md. Brainstormer agents use this when their conclusions (options, trade-offs, recommendations) need to survive across compaction or to feed downstream planners and executors.",
+        args: {
+          slug: tool.schema
+            .string()
+            .describe("Brainstorm slug: lowercase words separated by hyphens or dots"),
+          content: tool.schema.string().describe("Markdown content for the brainstorm"),
+        },
+        async execute(args, context) {
+          return brainstorms.write(context.directory, args);
+        },
+      }),
+      read_brainstorm: tool({
+        description:
+          "Read brainstorms from .opencode/brainstorms. Omit slug to list brainstorms; provide slug to read one; provide section with slug to read one markdown section.",
+        args: {
+          slug: tool.schema
+            .string()
+            .optional()
+            .describe("Brainstorm slug to read. Omit to list all brainstorms."),
+          section: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Markdown heading text to extract from the brainstorm, such as 'Options' or 'Recommendation'.",
+            ),
+        },
+        async execute(args, context) {
+          return brainstorms.read(context.directory, args);
+        },
+      }),
+      discard_brainstorm: tool({
+        description:
+          "Remove obsolete brainstorms from .opencode/brainstorms. Provide slug to remove one; omit slug to remove all brainstorms.",
+        args: {
+          slug: tool.schema
+            .string()
+            .optional()
+            .describe("Brainstorm slug to remove. Omit to remove all brainstorms."),
+        },
+        async execute(args, context) {
+          return brainstorms.discard(context.directory, args);
+        },
+      }),
+      persist_design: tool({
+        description:
+          "Persist a design system specification or design audit to .opencode/designs/<slug>.md. Designer agents use this in advisory mode (or when an implementation review needs a durable artifact) so executors can read the canonical design before applying it.",
+        args: {
+          slug: tool.schema
+            .string()
+            .describe("Design slug: lowercase words separated by hyphens or dots"),
+          content: tool.schema.string().describe("Markdown content for the design specification"),
+        },
+        async execute(args, context) {
+          return designs.write(context.directory, args);
+        },
+      }),
+      read_design: tool({
+        description:
+          "Read designs from .opencode/designs. Omit slug to list designs; provide slug to read one; provide section with slug to read one markdown section.",
+        args: {
+          slug: tool.schema
+            .string()
+            .optional()
+            .describe("Design slug to read. Omit to list all designs."),
+          section: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Markdown heading text to extract from the design, such as 'Colors' or 'Components'.",
+            ),
+        },
+        async execute(args, context) {
+          return designs.read(context.directory, args);
+        },
+      }),
+      discard_design: tool({
+        description:
+          "Remove obsolete designs from .opencode/designs. Provide slug to remove one; omit slug to remove all designs.",
+        args: {
+          slug: tool.schema
+            .string()
+            .optional()
+            .describe("Design slug to remove. Omit to remove all designs."),
+        },
+        async execute(args, context) {
+          return designs.discard(context.directory, args);
         },
       }),
     },

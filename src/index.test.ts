@@ -17,6 +17,12 @@ describe("ConductorPlugin tools", () => {
     expect(hooks.tool?.persist_final_plan).toBeDefined();
     expect(hooks.tool?.read_final_plan).toBeDefined();
     expect(hooks.tool?.discard_final_plan).toBeDefined();
+    expect(hooks.tool?.persist_brainstorm).toBeDefined();
+    expect(hooks.tool?.read_brainstorm).toBeDefined();
+    expect(hooks.tool?.discard_brainstorm).toBeDefined();
+    expect(hooks.tool?.persist_design).toBeDefined();
+    expect(hooks.tool?.read_design).toBeDefined();
+    expect(hooks.tool?.discard_design).toBeDefined();
   });
 
   test("wrapped tools validate runtime args before workflow handlers execute", async () => {

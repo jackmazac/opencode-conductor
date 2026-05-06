@@ -4,7 +4,7 @@ import { newPlanId, parsePlanId } from "@jackmazac/opencode-fleet-contracts";
 
 const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
-export type PlanArtifactFolder = "plans" | "subplans";
+export type PlanArtifactFolder = "plans" | "subplans" | "brainstorms" | "designs";
 
 export type PlanArtifactStoreConfig = {
   folder: PlanArtifactFolder;
