@@ -17,7 +17,7 @@ Conductor owns:
 - Journal (`.opencode/journal.jsonl`), handoff (`.opencode/handoff.md`), audits (`.opencode/audits/`)
 - Concord lifecycle artifacts — declarative (`.opencode/lifecycle/artifacts/concord/`)
 - Event spine (`.opencode/spine/events.sqlite`)
-- Agent-directed exploration (`explore_fast`)
+- Agent-directed exploration (`explore` / `explore-high` via Task)
 - Context budget diagnostics (`context_usage`)
 
 Conductor does NOT own:
@@ -28,6 +28,10 @@ Conductor does NOT own:
 - Plugin install / cross-plugin doctor / runtime contract validation → opencode-fleet
 - Plugin-boundary safety / telemetry emission → opencode-host-adapter
 - Canonical IDs / telemetry envelope / artifact ref / health report shapes → opencode-fleet-contracts
+
+### Third-party OpenCode plugins
+
+Plugins that are **not** authored and maintained by jackmazac — including typical community npm packages enabled through Fleet (for example `external_plugins`) — are **operator- and Fleet-owned**. Conductor does not ship them, maintain them, validate them from this repo, or treat them as part of its doctrine. Interop with separately maintained fleet repos stays contract- and artifact-based, as described in “Conductor does NOT own” above.
 
 ## Install
 
@@ -57,7 +61,7 @@ For local development:
 | Journal | `journal_write`, `journal_read`, `journal_done` |
 | Handoff | `handoff_write`, `handoff_read`, `handoff_done` |
 | Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher) |
-| Exploration | `explore_fast` |
+| Exploration | `explore`, `explore-high` |
 | Diagnostics | `context_usage` |
 
 The canonical tool list is enforced in `src/plugin-contract.test.ts`. The runtime smoke script (`scripts/runtime-smoke.ts`) asserts the tool count on every run.

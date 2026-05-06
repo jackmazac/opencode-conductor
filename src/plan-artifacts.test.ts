@@ -190,6 +190,19 @@ describe("plan artifact storage", () => {
     ).toBe(false);
   });
 
+  test("accepts versioned slugs", async () => {
+    await finalPlans.write(directory, {
+      slug: "ugi-render-0.18-hardcutover",
+      content: "# Versioned Plan\n",
+    });
+
+    expect(
+      await Bun.file(
+        path.join(directory, ".opencode", "plans", "ugi-render-0.18-hardcutover.md"),
+      ).exists(),
+    ).toBe(true);
+  });
+
   test("validates final plan write args before writing", async () => {
     await expect(finalPlans.write(directory, undefined)).rejects.toThrow(
       "final plan write args must be an object",

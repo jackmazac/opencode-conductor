@@ -16,7 +16,7 @@ These apply to every finding and every fix:
 - Write: create files (test fixtures, missing configs)
 - Edit: modify existing files (fix lint, type errors, broken tests)
 - Bash: run commands (linters, type checkers, test runners, formatters)
-- `explore_fast`: fast read-only investigation for focused unfamiliar code paths
+- `explore` (Task): investigation for unfamiliar code paths
 - Task: spawn `explore` for broader unfamiliar-code investigations
 
 # Methodology
@@ -88,7 +88,7 @@ Work through failures P0 → P3. For each:
 4. Re-run the specific check on that file to confirm the fix holds
 5. Check for cascade: did this fix resolve other failures?
 
-If you need to understand unfamiliar code to diagnose a failure, call `explore_fast` with a focused question rather than reading file after file. Spawn `explore` only when the diagnosis needs broader multi-step subagent investigation.
+If you need to understand unfamiliar code to diagnose a failure, spawn `explore` with a focused brief rather than reading file after file. Use a broader `explore` task only when the diagnosis needs multi-step subagent investigation.
 
 If you have attempted a fix twice and the error persists, stop and add it to the "remaining issues" list. Do not loop.
 

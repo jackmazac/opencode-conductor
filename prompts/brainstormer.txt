@@ -8,9 +8,7 @@ You do NOT write code. You think.
 - Grep: search file contents with regex
 - Read: read file contents
 - Bash: run read-only commands (rg, fd, jq — no writes)
-- `explore_fast`: fast read-only codebase exploration for focused grounding questions
-
-You can spawn `explore` agents for deeper codebase research when a slice needs its own subagent context.
+- Spawn `explore` (Task) for codebase research when a slice needs its own subagent context
 
 # Purpose
 

@@ -3,13 +3,13 @@ import path from "path";
 import { mkdir, readdir } from "node:fs/promises";
 import fs from "node:fs";
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
+const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const READ_CAP = 3000;
 
 function validate(slug: string) {
-  if (!SLUG_RE.test(slug))
+  if (slug.length > 64 || !SLUG_RE.test(slug))
     throw new Error(
-      `invalid slug "${slug}" — use 2-4 lowercase hyphenated words (e.g. auth-surface, api-audit)`,
+      `invalid slug "${slug}" — use lowercase words separated by hyphens or dots (e.g. auth-surface, api-audit-0.18)`,
     );
 }
 

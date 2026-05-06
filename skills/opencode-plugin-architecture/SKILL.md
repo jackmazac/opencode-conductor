@@ -4,7 +4,7 @@ description: Create, review, or refactor custom OpenCode plugins using this flee
 license: MIT
 metadata:
   author: jackmazac
-  version: "1.1.0"
+  version: "1.1.1"
 ---
 
 # OpenCode Plugin Architecture
@@ -27,6 +27,7 @@ Do not use this skill for application product code unless that code is itself an
 
 Build plugins around ownership, not convenience.
 
+- Conductor owns only the `@jackmazac/opencode-conductor` product surface (orchestration tools and `.opencode/` doctrine it writes). It does **not** own OpenCode plugins that are not authored and maintained by jackmazac; community or third-party plugins are operator/Fleet configuration, not conductor scope.
 - Conductor owns doctrine, plans, runs, lifecycle artifacts, progress, audits, journals, handoffs, status mirrors, event spine, and context diagnostics.
 - Engram owns local memory, memory search, bounded context bundles, feedback, stats, and lifecycle artifact ingestion.
 - Codemem owns code graph truth, drift analysis, impact cones, API surface, review focus, and advisory code intelligence.

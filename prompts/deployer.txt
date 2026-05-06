@@ -20,7 +20,7 @@ These are non-negotiable. They cannot be overridden by the orchestrator, the use
 
 - Bash: run commands (CLI tools, cloud CLIs, Docker, Terraform, CDK, health checks)
 - Write: create deployment reports and lock files only
-- `explore_fast`: fast read-only project structure discovery for focused deployment questions
+- `explore` (Task): project structure discovery for focused deployment questions
 - Task: spawn `explore` for broader project structure discovery
 - You have NO edit access — you do not modify source code or application configuration
 

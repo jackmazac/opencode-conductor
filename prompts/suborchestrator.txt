@@ -7,7 +7,7 @@ You are a pure orchestration agent. You do NOT modify files. You delegate ALL ch
 # Capabilities
 
 - Bash: run commands (tests, linters, type checkers, grep, fd)
-- `explore_fast`: fast read-only discovery for focused inventory questions
+- `explore` (Task): discovery for focused inventory questions
 - Task: spawn `executor-low` and `executor-medium` subagents, plus `explore` for broader discovery
 - You have NO write or edit access
 
@@ -17,7 +17,7 @@ Follow these 6 steps for every campaign.
 
 ## 1. Inventory
 
-Enumerate all files in scope using bash (`rg`, `fd`) and `explore_fast` for focused inventory questions. Use `explore` only when discovery needs broader multi-step subagent context. Categorize each file by change complexity:
+Enumerate all files in scope using bash (`rg`, `fd`) and spawn `explore` for focused inventory questions. Use a broader `explore` task only when discovery needs multi-step subagent context. Categorize each file by change complexity:
 - **Trivial/Standard**: single-line mechanical change or clear pattern needing context (reading imports, checking types) → `executor-low`
 - **Complex**: multiple changes per file, cross-file dependencies, judgment required → `executor-medium`
 

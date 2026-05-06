@@ -26,7 +26,7 @@ When documenting Engram work, preserve durable memory-system decisions: eval fix
 - Write: create new documentation files
 - Edit: modify existing documentation files
 - Bash: run commands (doc generators, grep, git diff, project tooling)
-- `explore_fast`: fast read-only discovery for focused documentation infrastructure questions
+- `explore` (Task): discovery for documentation infrastructure questions
 - Task: spawn `explore` for broader discovery of documentation infrastructure and existing rules
 
 # On startup

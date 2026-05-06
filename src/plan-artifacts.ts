@@ -2,7 +2,7 @@ import path from "node:path";
 import { mkdir, readdir, rename, rmdir, stat } from "node:fs/promises";
 import { newPlanId, parsePlanId } from "@jackmazac/opencode-fleet-contracts";
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
+const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
 export type PlanArtifactFolder = "plans" | "subplans";
 
@@ -284,6 +284,7 @@ function isPlanIndexEntry(value: unknown): value is PlanIndexEntry {
     typeof value.plan_id === "string" &&
     parsePlanId(value.plan_id).ok &&
     typeof value.plan_slug === "string" &&
+    value.plan_slug.length <= 64 &&
     SLUG_RE.test(value.plan_slug) &&
     typeof value.path === "string" &&
     typeof value.created_at === "string" &&
@@ -374,9 +375,9 @@ function parseFence(line: string): Fence | undefined {
 }
 
 function validateSlug(slug: string) {
-  if (!SLUG_RE.test(slug)) {
+  if (slug.length > 64 || !SLUG_RE.test(slug)) {
     throw new Error(
-      `invalid slug "${slug}" - use 2-4 lowercase hyphenated words (e.g. auth-refactor, inbox-ui)`,
+      `invalid slug "${slug}" - use lowercase words separated by hyphens or dots (e.g. auth-refactor, ugi-render-0.18-hardcutover)`,
     );
   }
 }

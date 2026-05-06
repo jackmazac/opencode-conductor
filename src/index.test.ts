@@ -4,12 +4,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertToolFailureResult, wrapPlugin } from "@jackmazac/opencode-host-adapter";
-import type { ExploreFastProcessRequest, ExploreFastProcessRunner } from "./explore-fast";
 import { createConductorHooks } from "./index";
 import { __test_setEngramDispatch } from "./workflow-tools/conflict-context";
 
 describe("ConductorPlugin tools", () => {
-  test("exposes explore_fast without removing plan artifact tools", () => {
+  test("exposes plan artifact tools", () => {
     const hooks = createConductorHooks();
 
     expect(hooks.tool?.persist_subplan).toBeDefined();
@@ -18,8 +17,6 @@ describe("ConductorPlugin tools", () => {
     expect(hooks.tool?.persist_final_plan).toBeDefined();
     expect(hooks.tool?.read_final_plan).toBeDefined();
     expect(hooks.tool?.discard_final_plan).toBeDefined();
-    expect(hooks.tool?.explore_fast).toBeDefined();
-    expect(hooks.tool?.explore_fast.description).toContain("Cursor CLI");
   });
 
   test("wrapped tools validate runtime args before workflow handlers execute", async () => {
@@ -36,10 +33,38 @@ describe("ConductorPlugin tools", () => {
 
       assertToolFailureResult(result);
       expect(result.tool).toBe("progress_update");
+      expect(result.output).toBe(result.message);
       expect(result.error.name).toBe("ToolArgsValidationError");
       expect(result.error.code).toBe("E_TOOL_ARGS_INVALID");
       expect(result.error.message).toContain('arg "plan_slug"');
       expect(await Bun.file(join(root, ".opencode", "progress")).exists()).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("progress_update accepts versioned plan slugs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "conductor-progress-versioned-"));
+    try {
+      const hooks = createConductorHooks();
+      const progressUpdate = getTool(hooks, "progress_update");
+
+      const result = await progressUpdate.execute(
+        {
+          plan_slug: "ugi-render-0.18-hardcutover",
+          wave_id: "W3B-Rehydration",
+          status: "done",
+          summary: "all tests pass",
+        },
+        toolContext(root),
+      );
+
+      expect(result).toContain("progress: ugi-render-0.18-hardcutover W3B-Rehydration");
+      const stored = await readJsonRecord(
+        join(root, ".opencode", "progress", "ugi-render-0.18-hardcutover.json"),
+      );
+      const waves = recordField(stored, "waves");
+      expect(hasOwn(waves, "W3B-Rehydration")).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -514,63 +539,6 @@ describe("ConductorPlugin tools", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
-
-  test("delegates explore_fast execution to the Cursor runner", async () => {
-    let request: ExploreFastProcessRequest | undefined;
-    const runner: ExploreFastProcessRunner = async (input) => {
-      request = input;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ result: "delegated exploration" }),
-        stderr: "",
-      };
-    };
-    const hooks = createConductorHooks({ exploreFastRunner: runner });
-    const exploreFast = hooks.tool?.explore_fast;
-    if (!exploreFast) throw new Error("explore_fast tool was not registered");
-
-    const result = await exploreFast.execute(
-      {
-        query: "find plan tools",
-        path: "src",
-        max_output_chars: 100,
-        timeout_ms: 123,
-      },
-      toolContext("/tmp/project"),
-    );
-
-    expect(result).toBe("delegated exploration");
-    expect(request?.cwd).toBe("/tmp/project");
-    expect(request?.timeoutMs).toBe(123);
-    expect(request?.args).toContain("--workspace");
-    expect(request?.args).toContain("/tmp/project");
-  });
-
-  test("rejects explore_fast paths outside the workspace before spawning", async () => {
-    let spawned = false;
-    const runner: ExploreFastProcessRunner = async () => {
-      spawned = true;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ result: "unused" }),
-        stderr: "",
-      };
-    };
-    const hooks = createConductorHooks({ exploreFastRunner: runner });
-    const exploreFast = hooks.tool?.explore_fast;
-    if (!exploreFast) throw new Error("explore_fast tool was not registered");
-
-    const result = await exploreFast.execute(
-      {
-        query: "find plan tools",
-        path: "../outside",
-      },
-      toolContext("/tmp/project"),
-    );
-
-    expect(result).toContain("explore-fast path must stay inside workspace");
-    expect(spawned).toBe(false);
-  });
 });
 
 type HooksUnderTest = { tool?: Record<string, unknown> };
@@ -663,6 +631,14 @@ function firstRecord(records: Record<string, unknown>[]): Record<string, unknown
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function recordField(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = record[key];
+  if (!isRecord(value)) {
+    throw new Error(`${key} must be an object`);
+  }
+  return value;
 }
 
 function hasOwn(value: unknown, key: string): boolean {

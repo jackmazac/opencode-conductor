@@ -38,6 +38,5 @@ runPluginContractTests({
     "conflict_context",
     "context_usage",
     "lifecycle_concord_ingest",
-    "explore_fast",
   ],
 });

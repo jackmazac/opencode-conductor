@@ -6,6 +6,10 @@ Doctrine and orchestration. Plans, runs, lifecycle artifacts, spine, exploration
 
 Do not implement features that belong to other fleet plugins. Conductor is narrow by design.
 
+## Plugin ownership boundary
+
+This repository maintains **`@jackmazac/opencode-conductor`** and the bridge or contract packages it exports (for example under `packages/`). Conductor **does not** own OpenCode plugins that are **not** created and maintained by jackmazac. Do not add code, prompts, or documentation here that implies Conductor maintains third-party or community plugins; Fleet manifest and local `opencode.json` are the layer for those installs.
+
 ## Canonical contracts
 
 ID types (`AgentRunId`, `PlanId`, `PlanSlug`, `WorkspaceId`, `CorrelationId`, `WaveId`, `TaskId`, `SpineSeq`, `ArtifactRef`, `LifecycleObjectId`, `ConcordEventId`, `FleetRunId`), the telemetry envelope, artifact ref shapes, and the canonical `HealthReport` all come from `@jackmazac/opencode-fleet-contracts` via `@jackmazac/opencode-host-adapter`. Do NOT redefine them here.
@@ -70,7 +74,7 @@ It writes lifecycle artifacts to `.opencode/lifecycle/artifacts/concord/` and sp
 
 ```bash
 bun run check            # lint:no-zod + typecheck + tests (159+)
-bun run smoke:runtime    # plugin loads, 31 tools present
+bun run smoke:runtime    # plugin loads, 30 tools present
 bun run doctor -- --json # emits valid canonical HealthReport
 bun run status -- --json # emits valid canonical HealthReport
 ```
@@ -79,7 +83,7 @@ All four must pass before a change is considered done.
 
 ## Fleet position
 
-Conductor is downstream of `opencode-host-adapter` (wraps it via `wrapPlugin`) and `opencode-fleet-contracts` (uses the canonical ID and shape types). Conductor is a peer to Engram, Concord, and Codemem — different concerns, no direct dependency. Conductor artifacts are consumed by Engram (ingest), Concord (status mirror correlation), and Fleet (report aggregation).
+Conductor is downstream of `opencode-host-adapter` (wraps it via `wrapPlugin`) and `opencode-fleet-contracts` (uses the canonical ID and shape types). When an operator installs other jackmazac-maintained fleet plugins, Conductor coordinates with them as **peers** through declarative artifacts and shared contracts — no direct dependency. Conductor artifacts may be consumed by those plugins (for example ingest or status mirrors) and by Fleet (report aggregation). Plugins not authored by jackmazac are **out of scope** for ownership in this repo; see **Plugin ownership boundary** above.
 
 ## Workflow tool conventions
 

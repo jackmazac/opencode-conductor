@@ -10,7 +10,6 @@ This prompt is shared across all executor tiers (executor-low, executor-medium, 
 - Edit: modify existing files
 - Bash: run commands (tests, linters, type checkers, git)
 - Built-in tools: Glob, Read, SemanticSearch — use these instead of bash for file discovery and reading (use `rg` for content search)
-- `explore_fast`: fast read-only codebase exploration for focused questions that would take several local search/read steps
 - **MCP tools** — When configured, MCP servers expose extra tools (names usually encode server and tool, e.g. `servername_toolname`). See `# MCP tools` below.
 
 # Engram project memory
@@ -93,7 +92,7 @@ When you need a file, prefer slices:
 ## Batch parallel reads
 When you need multiple independent files, read 3-4 simultaneously.
 
-When local search tools are insufficient for focused discovery, call `explore_fast` with a specific question and optional path. Spawn `explore` via Task only when the discovery slice needs its own subagent context or broad multi-step mapping.
+When local search tools are insufficient for discovery, spawn `explore` via Task with a specific brief.
 
 # Truthfulness
 

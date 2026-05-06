@@ -2,7 +2,7 @@
  * Conductor owns agent-directed LLM exploration (Cursor CLI backed).
  * Codemem owns deterministic code-graph / drift / impact truth.
  *
- * explore_fast stays in Conductor because it is an agent affordance
+ * Historical: `explore_fast` was a Conductor plugin tool; removed — use Task `explore` / local read tools instead.
  * (prompts, cues, model-reasoned narration) rather than deterministic
  * graph traversal. If you need file-dependency, impact-cone, API-surface,
  * layer-boundary, or change-risk analysis, use the codemem_* tools.

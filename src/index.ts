@@ -1,6 +1,5 @@
 import { type Plugin, tool } from "@opencode-ai/plugin";
 import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
-import { runExploreFast, type ExploreFastProcessRunner } from "./explore-fast";
 import { createPlanArtifactStore } from "./plan-artifacts";
 import { createWorkflowArtifactTools } from "./workflow-artifacts";
 import type { ContextUsageClient } from "./workflow-tools/context-usage";
@@ -20,7 +19,6 @@ const finalPlans = createPlanArtifactStore({
 });
 
 export type ConductorPluginDeps = {
-  exploreFastRunner?: ExploreFastProcessRunner;
   contextUsageClient?: ContextUsageClient;
 };
 
@@ -28,48 +26,13 @@ export function createConductorHooks(deps: ConductorPluginDeps = {}) {
   return {
     tool: {
       ...createWorkflowArtifactTools({ contextUsageClient: deps.contextUsageClient }),
-      explore_fast: tool({
-        description:
-          "Run fast read-only codebase exploration through Cursor CLI headless mode using Composer 2 Fast and the packaged explore prompt.",
-        args: {
-          query: tool.schema
-            .string()
-            .describe("Codebase exploration request, question, or search brief."),
-          path: tool.schema
-            .string()
-            .optional()
-            .describe(
-              "Optional workspace-relative path to focus the exploration. Must stay inside the workspace.",
-            ),
-          max_output_chars: tool.schema
-            .number()
-            .int()
-            .positive()
-            .optional()
-            .describe("Optional maximum number of output characters returned to the caller."),
-          timeout_ms: tool.schema
-            .number()
-            .int()
-            .positive()
-            .optional()
-            .describe("Optional Cursor CLI timeout in milliseconds."),
-        },
-        async execute(args, context) {
-          return runExploreFast({
-            directory: context.directory,
-            query: args.query,
-            path: args.path,
-            maxOutputChars: args.max_output_chars,
-            timeoutMs: args.timeout_ms,
-            runner: deps.exploreFastRunner,
-          });
-        },
-      }),
       persist_subplan: tool({
         description:
           "Persist a planner draft or intermediary plan to .opencode/subplans/<slug>.md. Planner agents use this for candidate plans before the orchestrator synthesizes the final canonical plan.",
         args: {
-          slug: tool.schema.string().describe("Subplan slug: 2-4 lowercase hyphenated words"),
+          slug: tool.schema
+            .string()
+            .describe("Subplan slug: lowercase words separated by hyphens or dots"),
           content: tool.schema
             .string()
             .describe("Markdown content for the planner draft or intermediary plan"),
@@ -114,7 +77,9 @@ export function createConductorHooks(deps: ConductorPluginDeps = {}) {
         description:
           "Persist the orchestrator-approved canonical plan to .opencode/plans/<slug>.md, returning its stable plan_id, plan_slug, and path. Use only after synthesizing planner drafts and presenting the final plan to the user.",
         args: {
-          slug: tool.schema.string().describe("Final plan slug: 2-4 lowercase hyphenated words"),
+          slug: tool.schema
+            .string()
+            .describe("Final plan slug: lowercase words separated by hyphens or dots"),
           content: tool.schema.string().describe("Markdown content for the canonical final plan"),
         },
         async execute(args, context) {
