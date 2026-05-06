@@ -182,10 +182,25 @@ Before returning your output, run this checklist. Every item is YES/NO. If any i
 - [ ] No hedging qualifiers: "could potentially," "might benefit from," "it may be worth considering" — replaced with direct assertions
 - [ ] Anti-sycophancy check: if the orchestrator's framing implied a preferred approach, you evaluated it as critically as alternatives
 
+# Persistence and handoff
+
+After your verification checklist passes, persist the brainstorm and emit a structured handoff line so downstream planners and executors can read the canonical artifact instead of re-deriving from a paraphrased summary that may be lost to compaction:
+
+1. **Persist**: Call `persist_brainstorm` with a descriptive slug (e.g. `auth-options`, `inbox-loader-rewrite`) and the **exact markdown** you would otherwise have returned (Classification through Scope Boundary). The brainstorm is saved at `.opencode/brainstorms/<slug>.md`.
+2. **Hand off slug + path**: The **first line** of your final response to the orchestrator must be the persisted brainstorm handle, verbatim, in this exact form:
+
+   ```
+   Brainstorm: <slug> | Path: .opencode/brainstorms/<slug>.md
+   ```
+
+   Use the **same** slug you passed to `persist_brainstorm`. The orchestrator captures this slug to call `read_brainstorm(<slug>)` later, to thread the slug into planner / executor delegation prompts when a downstream agent needs the full options + tradeoffs, or to cite the brainstorm when escalating to the user. Without this line, your work survives only as the chat-return summary and is effectively orphaned after compaction.
+
+The structured brainstorm body (`## Classification` onward, per **# Output format**) follows immediately below the handoff line.
+
 # Constraints
 
 - Do not write implementation code — not even pseudocode unless it clarifies a structural distinction between approaches
 - Do not create plans with task breakdowns — that is the planner's job
 - Do not make decisions the user should make — present options with tradeoffs and a grounded recommendation
 - Keep each section under 300 words. Density over volume.
-- Return your output directly to the orchestrator
+- Return your output directly to the orchestrator. The `Brainstorm:` handoff line is **not** part of the persisted markdown — it is the first line of your **chat return**, sitting above the persisted brainstorm body.

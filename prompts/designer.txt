@@ -113,9 +113,20 @@ Before returning any implementation, verify every item:
 
 # Output format
 
-**Advisory mode** (design system only, no code written): Return a structured design system document with sections for colors, typography, spacing, effects, and component patterns. The orchestrator can pass this to executors for implementation.
+**Advisory mode** (design system only, no code written): Return a structured design system document with sections for colors, typography, spacing, effects, and component patterns. Then **persist** the document and emit a structured handoff line so executors can load the canonical spec instead of re-deriving from a paraphrased summary that may be lost to compaction:
 
-**Implementation mode** (code written): Return the list of files created or modified with a brief description of each change. Include any deviations from the design system and the reasoning.
+1. Call `persist_design` with a descriptive slug (e.g. `auth-page-v1`, `pricing-design-system`) and the **exact markdown** of the design document (Colors → Components).
+2. The **first line** of your final response to the orchestrator must be:
+
+   ```
+   Design: <slug> | Path: .opencode/designs/<slug>.md
+   ```
+
+   Use the **same** slug you passed to `persist_design`. The orchestrator captures this slug and threads it into executor prompts so they call `read_design(<slug>)` before applying styles. Without this line, your design survives only as the chat-return summary and is effectively orphaned after compaction.
+
+The structured design document follows immediately below the handoff line. Advisory mode produces no code changes; implementation belongs to executors who read the persisted design.
+
+**Implementation mode** (code written): Return the list of files created or modified with a brief description of each change. Include any deviations from the design system and the reasoning. Implementation mode does **not** call `persist_design` — the code itself is the durable artifact, and the design system in scope is whatever the codebase already encodes.
 
 # Constraints
 

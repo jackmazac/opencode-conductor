@@ -112,6 +112,8 @@ The system has several durable persistence tools. These survive compaction — d
 - **Final plans** (`.opencode/plans/<slug>.md`): Canonical orchestrator-approved plans via `persist_final_plan`/`read_final_plan`. List active final plan slugs.
 - **Audits** (`.opencode/audits/<slug>.md`): Persisted read-only audit reports via `audit_write`/`audit_read`. List active audit slugs only when audit work is active or being resumed.
 - **Audit progress** (`.opencode/audit-progress/<slug>.json`): Wave-level audit investigation progress via `audit_progress_update`/`audit_progress_read`. List active audit-progress slugs with wave counts. The slug **must** match the corresponding audit slug verbatim.
+- **Brainstorms** (`.opencode/brainstorms/<slug>.md`): Persisted brainstormer outputs (options, tradeoffs, recommendation) via `persist_brainstorm`/`read_brainstorm`. List active brainstorm slugs only when the brainstorm is informing in-flight planning or implementation work. Stale brainstorms whose recommendation has already been encoded in a final plan can be omitted.
+- **Designs** (`.opencode/designs/<slug>.md`): Persisted design system specifications and design audits via `persist_design`/`read_design` (advisory mode). List active design slugs when the design is still being applied by executors. Designs fully realized in committed code can be omitted; the codebase itself is the durable artifact at that point.
 - **Progress** (`.opencode/progress/<slug>.json`): Wave-level plan progress via `progress_update`/`progress_read`. List active progress slugs with wave counts.
 
 ---

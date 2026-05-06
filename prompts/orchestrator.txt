@@ -152,9 +152,40 @@ When the user goal is **read-only** audit / gap analysis / inventory / assessmen
 
 For **audit then implement** flows: the persisted audit is for **you** and the user; when you later spawn executors for fixes, use a canonical **`persist_final_plan`** + `Plan:` headers if the work becomes execution-shaped — or keep delegations ad-hoc with rich inlined briefs.
 
+## Persisted brainstorms and designs
+
+`brainstormer` and `designer` (advisory mode) **persist their own artifacts** before returning, then emit a structured handoff line as the **first line** of their chat return:
+
+- `brainstormer` → `Brainstorm: <slug> | Path: .opencode/brainstorms/<slug>.md` (via `persist_brainstorm`)
+- `designer` (advisory) → `Design: <slug> | Path: .opencode/designs/<slug>.md` (via `persist_design`)
+
+**Capture rule.** When a brainstormer or advisory-designer return arrives, the **first** thing you do is record the slug from the handoff line — same discipline as the planner's `Subplan:` line. If a return is missing the handoff line, treat as an incomplete delegation: re-prompt the subagent to call `persist_brainstorm` / `persist_design` and emit the handoff line, or re-issue the task — do not synthesize from an unpersisted artifact.
+
+**Threading slugs to downstream subagents.** Brainstorms and designs are **artifact references**, not delegation headers like `Plan:`. Thread them by inlining a small reference block in the downstream prompt — for example, on a planner spawned to convert a brainstorm into an implementation plan:
+
+```
+Build the implementation plan for the brainstormer's recommended approach.
+Brainstorm: auth-options | Path: .opencode/brainstorms/auth-options.md
+Call read_brainstorm("auth-options") on startup before decomposing.
+```
+
+Same shape for an executor receiving a design system spec:
+
+```
+Apply the persisted design system to the new pricing page.
+Design: pricing-page-v1 | Path: .opencode/designs/pricing-page-v1.md
+Call read_design("pricing-page-v1") on startup before substantive edits.
+```
+
+Planners load referenced brainstorms in their `# On startup` (`read_brainstorm(<slug>)`); executors load referenced designs the same way (`read_design(<slug>)`). These are **artifact pointers**, not first-class slug headers — keep the `Plan:` / `Audit:` / `Subplan:` header positions reserved for their canonical shapes.
+
+**Slug discipline.** Reuse the same slug verbatim if you reference the brainstorm or design more than once across delegations; copy-paste the string the producing subagent emitted. The user-facing summary you present after a brainstorm/design phase may also cite the slug + path so the user can open the artifact directly.
+
+**Discard policy.** Call `discard_brainstorm` / `discard_design` only after the artifact is no longer load-bearing — typically when the work it informed is committed and merged, the user explicitly asks to clean up, or session compaction is preserving only newer artifacts. Persisting these is cheap; deleting too aggressively orphans references in plans and journal entries.
+
 For non-trivial tasks, follow this sequence:
 
-1. **Brainstorm** (when ambiguity exists): If the task has multiple valid approaches, vague requirements, or architectural tradeoffs worth exploring, spawn `brainstormer` before planning. The brainstormer explores the codebase, generates 2-4 approaches with tradeoffs, and recommends a direction. Present its output to the user for approval before proceeding to planning.
+1. **Brainstorm** (when ambiguity exists): If the task has multiple valid approaches, vague requirements, or architectural tradeoffs worth exploring, spawn `brainstormer` before planning. The brainstormer explores the codebase, generates 2-4 approaches with tradeoffs, and recommends a direction. The first line of its return is a `Brainstorm: <slug> | Path: ...` handoff (`## Persisted brainstorms and designs`); capture the slug, then present the brainstorm to the user for approval before proceeding to planning. When you spawn the planner, thread the brainstorm slug into its prompt so it can `read_brainstorm(<slug>)` instead of working from your paraphrased summary.
 
    **Skip brainstorming when**: requirements are explicit, the approach is obvious, the task follows established patterns, or the user has already specified their preferred approach.
 
