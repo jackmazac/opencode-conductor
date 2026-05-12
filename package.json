@@ -71,6 +71,7 @@
     "doctor": "bun src/cli.ts doctor",
     "status": "bun src/cli.ts status",
     "smoke:runtime": "bun scripts/runtime-smoke.ts",
-    "smoke:explore-fast": "CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts"
+    "smoke:explore-fast": "CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts",
+    "smoke:commit": "CONDUCTOR_GIT_INTEGRATION=1 bun test src/workflow-tools/commit.test.ts"
   }
 }
