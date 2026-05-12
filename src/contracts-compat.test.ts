@@ -23,6 +23,8 @@ import {
   parseAgentRunId,
   parseConcordEventId,
   parseCorrelationId,
+  parseLegacyAgentRunId,
+  parseLegacyCorrelationId,
   parsePlanSlug,
   parseToolCallId,
   parseWaveId,
@@ -95,9 +97,10 @@ describe("A. Run record IDs decode cleanly", () => {
   const legacyRunId = "run_abc123-def";
   const legacyCorrId = "corr_abc123-def";
 
-  test("parseAgentRunId accepts legacy non-ULID run_ id", () => {
-    const result = parseAgentRunId(legacyRunId);
-    expect(result.ok, `parseAgentRunId rejected legacy id "${legacyRunId}"`).toBe(true);
+  test("parseLegacyAgentRunId accepts legacy non-ULID run_ id", () => {
+    const result = parseLegacyAgentRunId(legacyRunId);
+    expect(result.ok, `parseLegacyAgentRunId rejected legacy id "${legacyRunId}"`).toBe(true);
+    expect(parseAgentRunId(legacyRunId).ok).toBe(false);
   });
 
   test("isLegacyId('run', ...) returns true for legacy run id", () => {
@@ -108,9 +111,10 @@ describe("A. Run record IDs decode cleanly", () => {
     expect(isLegacyId("run", RUN_ID_ULID)).toBe(false);
   });
 
-  test("parseCorrelationId accepts legacy non-ULID corr_ id", () => {
-    const result = parseCorrelationId(legacyCorrId);
-    expect(result.ok, `parseCorrelationId rejected legacy id "${legacyCorrId}"`).toBe(true);
+  test("parseLegacyCorrelationId accepts legacy non-ULID corr_ id", () => {
+    const result = parseLegacyCorrelationId(legacyCorrId);
+    expect(result.ok, `parseLegacyCorrelationId rejected legacy id "${legacyCorrId}"`).toBe(true);
+    expect(parseCorrelationId(legacyCorrId).ok).toBe(false);
   });
 
   test("isLegacyId('corr', ...) returns true for legacy correlation id", () => {
