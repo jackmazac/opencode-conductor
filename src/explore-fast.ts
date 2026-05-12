@@ -2,18 +2,27 @@
  * Conductor owns agent-directed LLM exploration (Cursor CLI backed).
  * Codemem owns deterministic code-graph / drift / impact truth.
  *
- * `explore-fast` is a typed wrapper around `agent -p --model composer-2-fast …`.
- * It is used as an internal library by Conductor flows that want fast,
- * model-reasoned exploration cues (prompts, narration) rather than deterministic
- * graph traversal. If you need file-dependency, impact-cone, API-surface,
- * layer-boundary, or change-risk analysis, use the codemem_* tools.
+ * `explore-fast` is a typed wrapper around `agent -p --model composer-2-fast …`,
+ * exposed as the `explore_fast` plugin tool registered in `src/index.ts`. It is
+ * used for fast, model-reasoned exploration cues (prompts, narration) rather
+ * than deterministic graph traversal. If you need file-dependency, impact-cone,
+ * API-surface, layer-boundary, or change-risk analysis, use the codemem_* tools.
  *
- * Two public functions:
- *   - `streamExploreFast` yields typed events as the CLI emits them. Callers
- *     that want incremental output use this directly.
- *   - `runExploreFast` drains the stream into a bounded `Promise<string>` —
- *     same return shape `explore-fast` has always had, so legacy callers
- *     don't need to change.
+ * Three public surfaces:
+ *   - The `explore_fast` plugin tool — registered in `src/index.ts`, wraps
+ *     `runExploreFast` with the OpenCode tool schema (`query`, `path?`,
+ *     `thoroughness?`). This is what orchestrators call.
+ *   - `runExploreFast` — drains the stream into `Promise<string>`. Internal
+ *     library callers and the plugin tool both use this.
+ *   - `streamExploreFast` — yields typed events as the CLI emits them, for
+ *     internal callers that want incremental output. Not exposed via the
+ *     plugin-tool schema.
+ *
+ * The library does not impose a per-call timeout. The CLI runs to completion
+ * (success, CLI-emitted error, or non-zero exit). The OpenCode task harness
+ * owns the outer wall-clock envelope. Callers that need a hard cap can break
+ * out of `streamExploreFast` early — the async generator's `finally` aborts
+ * the spawned `AbortController`, which Bun.spawn translates into SIGTERM.
  *
  * Pricing model: free with `agent login`. No new runtime dependencies.
  */
@@ -24,30 +33,34 @@ import {
   toArgv,
   type CursorInvocation,
   type CursorModel,
-  type ExploreFastErrorKind,
   type ExploreFastEvent,
   type ExploreFastThoroughness,
 } from "./cursor-cli-types";
+import {
+  computeCacheKey,
+  getInflight,
+  readCache,
+  setInflight,
+  writeCache,
+} from "./explore-cache";
 
 const DEFAULT_MAX_ERROR_CHARS = 2_000;
 const DEFAULT_THOROUGHNESS: ExploreFastThoroughness = "standard";
 
 /**
- * Default time and model budget per thoroughness tier. Callers can override
- * `timeoutMs` or `model` explicitly; otherwise these defaults match the
- * orchestrator's `explore` / `explore-high` shape from `orchestrator.txt`.
+ * Default model per thoroughness tier. `exhaustive` upgrades to the deeper
+ * `composer-2` model — the `explore-high` distinction from `orchestrator.txt`.
  *
- * Notably: `exhaustive` upgrades to the deeper `composer-2` model. That maps
- * the `explore-high` distinction directly — strongest reasoning when the slice
- * needs it, fast model otherwise.
+ * The library does not impose a per-call timeout. The Cursor CLI runs to
+ * completion (success, CLI-emitted error, or non-zero exit) and the OpenCode
+ * task harness owns the outer wall-clock envelope. Callers that want a hard
+ * cap can break out of `streamExploreFast` early — the async generator's
+ * cleanup aborts the subprocess via SIGTERM (see the `finally` block).
  */
-const THOROUGHNESS_DEFAULTS: Record<
-  ExploreFastThoroughness,
-  { timeoutMs: number; model: CursorModel }
-> = {
-  quick: { timeoutMs: 30_000, model: "composer-2-fast" },
-  standard: { timeoutMs: 120_000, model: "composer-2-fast" },
-  exhaustive: { timeoutMs: 300_000, model: "composer-2" },
+const THOROUGHNESS_MODELS: Record<ExploreFastThoroughness, CursorModel> = {
+  quick: "composer-2-fast",
+  standard: "composer-2-fast",
+  exhaustive: "composer-2",
 };
 
 export type RunExploreFastInput = {
@@ -55,13 +68,24 @@ export type RunExploreFastInput = {
   query: string;
   path?: string;
   /**
-   * Thoroughness tier (`quick` / `standard` / `exhaustive`). Drives the
-   * default `timeoutMs` and `model` per `THOROUGHNESS_DEFAULTS`, and is
-   * written into the prompt so the agent adapts its search depth. Explicit
-   * `timeoutMs` / `model` override the tier defaults. Defaults to `standard`.
+   * Thoroughness tier (`quick` / `standard` / `exhaustive`). Picks the default
+   * model per `THOROUGHNESS_MODELS` and is written into the prompt so the
+   * agent adapts its search depth. Explicit `model` overrides the tier
+   * default. Defaults to `standard`.
    */
   thoroughness?: ExploreFastThoroughness;
-  timeoutMs?: number;
+  /**
+   * Read and write the content-addressed cache at `.opencode/explore-cache/`.
+   * Default `true`. Set `false` to force a fresh CLI call (escape hatch for
+   * uncommitted-edit loops or known cache staleness). Cache key includes
+   * query, target path, thoroughness, model, workspace, system prompt
+   * content, git HEAD, and agent CLI version — see `explore-cache.ts`.
+   *
+   * Cache behavior only applies to `runExploreFast`. `streamExploreFast`
+   * never consults the cache; callers using the streaming API are assumed
+   * to want incremental output and bypass caching by definition.
+   */
+  cache?: boolean;
   maxErrorChars?: number;
   systemPrompt?: string;
   model?: CursorModel;
@@ -106,9 +130,7 @@ export async function* streamExploreFast(
   }
 
   const thoroughness = input.thoroughness ?? DEFAULT_THOROUGHNESS;
-  const defaults = THOROUGHNESS_DEFAULTS[thoroughness];
-  const timeoutMs = input.timeoutMs ?? defaults.timeoutMs;
-  const model = input.model ?? defaults.model;
+  const model = input.model ?? THOROUGHNESS_MODELS[thoroughness];
   const maxErrorChars = input.maxErrorChars ?? DEFAULT_MAX_ERROR_CHARS;
 
   const systemPrompt = input.systemPrompt ?? (await loadExplorePrompt());
@@ -129,7 +151,6 @@ export async function* streamExploreFast(
 
   const spawn = input.spawn ?? defaultSpawn;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("timeout"), timeoutMs);
 
   let proc: ExploreFastSubprocess;
   try {
@@ -139,7 +160,6 @@ export async function* streamExploreFast(
       signal: controller.signal,
     });
   } catch (error) {
-    clearTimeout(timer);
     yield {
       type: "error",
       kind: "spawn",
@@ -159,15 +179,6 @@ export async function* streamExploreFast(
 
     const exitCode = await proc.exited;
 
-    if (controller.signal.aborted && controller.signal.reason === "timeout") {
-      yield {
-        type: "error",
-        kind: "timeout",
-        message: `Cursor CLI timed out after ${timeoutMs}ms`,
-      };
-      return;
-    }
-
     if (exitCode !== 0) {
       const stderr = cap((await stderrPromise) || "(no stderr)", maxErrorChars);
       yield {
@@ -177,12 +188,11 @@ export async function* streamExploreFast(
       };
     }
   } finally {
-    clearTimeout(timer);
     // If the caller broke out of the stream early, the async generator's
     // .return() runs this finally — but the subprocess is still alive and
     // will block on stdout once the OS pipe buffer fills. Abort the signal
-    // so Bun.spawn sends SIGTERM. No-op if we already aborted via timeout
-    // or the process exited cleanly.
+    // so Bun.spawn sends SIGTERM. No-op when the process already exited
+    // cleanly.
     if (!controller.signal.aborted) controller.abort("disposed");
   }
 }
@@ -190,26 +200,76 @@ export async function* streamExploreFast(
 /**
  * Drain `streamExploreFast` into a single string. Same `Promise<string>`
  * return shape as the pre-migration `runExploreFast` — legacy callers see no
- * API change. Output is no longer truncated; the orchestrator's task harness
- * is the right place to bound subagent return size.
+ * API change. Output is not truncated; the orchestrator's task harness is
+ * the right place to bound subagent return size.
  *
- * Resolution order:
- *   1. `error` event of kind `timeout` with partial chunks → return the
- *      partial output prefixed with `[partial output — <timeout message>]`.
- *      The agent's pre-cancellation work has stand-alone value; throwing it
- *      away is a real correctness loss for the `exhaustive` tier.
- *   2. Any other `error` event → return the message verbatim (bounded by the
+ * Cache behavior (when `input.cache !== false`, the default):
+ *   1. Compute the content-hash cache key from post-default-expansion inputs.
+ *   2. If the disk cache has a fresh entry, return it without spawning.
+ *   3. If a concurrent in-process call is already running the same key, await
+ *      its result (dedup) without spawning a second CLI process.
+ *   4. Otherwise, run the stream and on successful completion, write the
+ *      result to the cache. Errors are not cached — a transient CLI failure
+ *      shouldn't poison subsequent retries.
+ *
+ * Resolution order for the drained result:
+ *   1. First `error` event wins — returned verbatim (already bounded by the
  *      streamer's `maxErrorChars`).
- *   3. Otherwise, concatenated `assistant_text` chunks.
- *   4. Otherwise (no streamed text), the terminal `done.result`. Cursor's
+ *   2. Otherwise, concatenated `assistant_text` chunks.
+ *   3. Otherwise (no streamed text), the terminal `done.result`. Cursor's
  *      `result` event echoes the final answer; if we already captured it via
  *      `assistant_text` we drop the echo to avoid doubling the output.
- *   5. Empty string.
+ *   4. Empty string.
  */
 export async function runExploreFast(input: RunExploreFastInput): Promise<string> {
+  const useCache = input.cache !== false;
+
+  // Cache lookup happens before validation so an invalid input doesn't burn
+  // a cache key computation. validateInput is fast; we run it twice (here for
+  // cache eligibility, and again inside streamExploreFast). Cheap.
+  let cacheKey: string | undefined;
+  if (useCache) {
+    cacheKey = await tryComputeCacheKey(input);
+    if (cacheKey !== undefined) {
+      const cached = await readCache(input.directory, cacheKey);
+      if (cached !== null) return cached;
+      const concurrent = getInflight(cacheKey);
+      if (concurrent !== undefined) return concurrent;
+    }
+  }
+
+  const runPromise = drainStream(input);
+  // Inflight dedup must expose the final string to peer callers — they don't
+  // need the `hadError` flag since they don't make caching decisions.
+  if (useCache && cacheKey !== undefined) {
+    setInflight(
+      cacheKey,
+      runPromise.then((r) => r.content),
+    );
+  }
+
+  const { content, hadError } = await runPromise;
+
+  // Cache writes are best-effort. A disk failure here must not poison the
+  // caller's result — they already have the content; the cache miss on the
+  // next call is the only consequence.
+  if (useCache && cacheKey !== undefined && !hadError && content.length > 0) {
+    try {
+      await writeCache(input.directory, cacheKey, content);
+    } catch {
+      // swallowed — see comment above
+    }
+  }
+
+  return content;
+}
+
+async function drainStream(
+  input: RunExploreFastInput,
+): Promise<{ content: string; hadError: boolean }> {
   const chunks: string[] = [];
   let doneResult: string | undefined;
-  let firstError: { kind: ExploreFastErrorKind; message: string } | undefined;
+  let firstError: string | undefined;
 
   for await (const event of streamExploreFast(input)) {
     if (event.type === "assistant_text") {
@@ -217,19 +277,37 @@ export async function runExploreFast(input: RunExploreFastInput): Promise<string
     } else if (event.type === "done") {
       if (event.result !== undefined) doneResult = event.result;
     } else if (event.type === "error") {
-      if (firstError === undefined) firstError = { kind: event.kind, message: event.message };
+      if (firstError === undefined) firstError = event.message;
     }
   }
 
-  if (firstError !== undefined) {
-    if (firstError.kind === "timeout" && chunks.length > 0) {
-      return `[partial output — ${firstError.message}]\n\n${chunks.join("")}`;
-    }
-    return firstError.message;
-  }
-  if (chunks.length > 0) return chunks.join("");
-  if (doneResult !== undefined) return doneResult;
-  return "";
+  if (firstError !== undefined) return { content: firstError, hadError: true };
+  if (chunks.length > 0) return { content: chunks.join(""), hadError: false };
+  if (doneResult !== undefined) return { content: doneResult, hadError: false };
+  return { content: "", hadError: false };
+}
+
+/**
+ * Build the cache key from the same normalized inputs the streamer uses.
+ * Returns `undefined` if the input fails validation — we never cache
+ * malformed requests because their key inputs aren't meaningful (e.g., the
+ * trimmed query is empty). Streamer still runs and surfaces the validation
+ * error to the caller via its `error` event.
+ */
+async function tryComputeCacheKey(input: RunExploreFastInput): Promise<string | undefined> {
+  const validation = validateInput(input);
+  if (!validation.ok) return undefined;
+  const thoroughness = input.thoroughness ?? DEFAULT_THOROUGHNESS;
+  const model = input.model ?? THOROUGHNESS_MODELS[thoroughness];
+  const systemPrompt = input.systemPrompt ?? (await loadExplorePrompt());
+  return computeCacheKey({
+    query: validation.query,
+    targetPath: validation.targetPath ?? null,
+    thoroughness,
+    model,
+    workspace: path.resolve(input.directory),
+    systemPrompt,
+  });
 }
 
 // ---------------------------------------------------------------------------

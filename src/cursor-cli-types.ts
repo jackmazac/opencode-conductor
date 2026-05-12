@@ -15,9 +15,10 @@ export type CursorOutputFormat = "json" | "stream-json";
 
 /**
  * Thoroughness contract from `prompts/explore.txt`. The orchestrator picks the
- * tier; `explore-fast` maps it to timeout and model defaults (see
- * `THOROUGHNESS_DEFAULTS` in `explore-fast.ts`) and writes the tier into the
- * prompt so the agent adapts its search depth.
+ * tier; `explore-fast` maps it to a default model (see `THOROUGHNESS_MODELS`
+ * in `explore-fast.ts`) and writes the tier into the prompt so the agent
+ * adapts its search depth. There is no per-tier timeout — the CLI runs to
+ * completion and the outer task harness owns the wall-clock budget.
  *
  *   quick      — first match is sufficient, return immediately
  *   standard   — primary locations + 2-3 grep passes + cross-references (default)
@@ -26,18 +27,17 @@ export type CursorOutputFormat = "json" | "stream-json";
 export type ExploreFastThoroughness = "quick" | "standard" | "exhaustive";
 
 /**
- * Classifies the source of an error event. Callers that drain the stream into
- * a final string (e.g. `runExploreFast`) check this to decide whether partial
- * output is worth keeping — `timeout` is the only kind where the agent's
- * pre-cancellation work has stand-alone value.
+ * Classifies the source of an error event. The library does not impose a
+ * per-call timeout — the caller (OpenCode's task harness, or whoever owns the
+ * outer envelope) is responsible for bounding wall time. The kinds below are
+ * the only error sources `streamExploreFast` can emit.
  *
  *   validation — caller input rejected (empty query, path escape)
  *   spawn      — Bun.spawn threw before the process started
- *   timeout    — we aborted after `timeoutMs` elapsed; partial chunks may exist
  *   exit       — CLI exited non-zero with stderr content
  *   cli        — CLI emitted a `result` event with `is_error: true`
  */
-export type ExploreFastErrorKind = "validation" | "spawn" | "timeout" | "exit" | "cli";
+export type ExploreFastErrorKind = "validation" | "spawn" | "exit" | "cli";
 
 export type CursorInvocation = {
   model: CursorModel;

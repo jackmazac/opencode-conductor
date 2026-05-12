@@ -21,6 +21,7 @@ ID types (`AgentRunId`, `PlanId`, `PlanSlug`, `WorkspaceId`, `CorrelationId`, `W
 - Add new workflow tools (one file per coherent concern in `src/workflow-tools/<name>.ts`; see Tool addition workflow below).
 - Document behavioral conventions in the Ownership section of `README.md`.
 - Extend the event spine schema in `packages/spine/src/` when new event categories are needed.
+- Extend the Cursor CLI wrapper at `src/explore-fast.ts` when adding fields to the typed argv (`CursorInvocation`), thoroughness defaults (`THOROUGHNESS_DEFAULTS`), or event mapping (`parseEvent` and friends). See the `explore-fast` invariant below before changing the event shape.
 
 ## What agents do NOT do here
 
@@ -53,6 +54,15 @@ It writes lifecycle artifacts to `.opencode/lifecycle/artifacts/concord/` and sp
 **Tool count is asserted at runtime**
 `scripts/runtime-smoke.ts` asserts that the plugin exposes exactly the expected number of tools on every run. Update the assertion when adding or removing tools.
 
+**`explore_fast` is the plugin-tool entry point to the Cursor `agent` CLI**
+`src/explore-fast.ts` is the implementation behind the `explore_fast` plugin tool registered in `src/index.ts`. It wraps the Cursor `agent` CLI with `--output-format stream-json` and exposes a `runExploreFast(input): Promise<string>` library function for internal callers (the plugin tool is a thin wrapper around it) and a `streamExploreFast(input): AsyncGenerator<ExploreFastEvent>` for callers that want incremental output. The on-the-wire CLI envelope (`system` / `init` / `user` / `assistant` / `result`) is mapped to the internal `ExploreFastEvent` tagged union exactly once, in `parseEvent` / `parseAssistantEvent` / `parseResultEvent`. If the Cursor CLI envelope shape ever changes, those three functions are the only places that need to. Tests inject a fake `spawn` returning `ReadableStream<Uint8Array>` fixtures — never spawn the real `agent` from unit tests. The env-gated integration test (`CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts`, surfaced as `bun run smoke:explore-fast`) is the only place that exercises the real binary, and it is skipped by default. The `@cursor/sdk` TypeScript package was evaluated for this role and explicitly rejected — token-based pricing per call would be a real cost regression versus the CLI's free-with-`agent-login` auth. See `.opencode/plans/explore-fast-cursor-sdk-migration.md` for the full decision history.
+
+**`explore-fast` does not impose a per-call timeout**
+The library deliberately has no `timeoutMs` parameter and the plugin tool exposes no `timeout_ms` arg. The Cursor CLI runs to completion — success, CLI `is_error`, or non-zero exit — and the OpenCode task harness (or whichever caller owns the outer envelope) is responsible for bounding wall time. Callers that need a hard cap should bound the surrounding task or break out of `streamExploreFast` early; the async generator's `finally` aborts the spawned `AbortController`, which Bun.spawn translates into SIGTERM. Do not reintroduce a library-level timer — that path was removed after real OpenCode usage showed a 30s default cutting off legitimately slow exhaustive explores. See `.opencode/plans/explore-fast-cursor-sdk-migration.md` for the decision trail.
+
+**`explore-fast` cache key composition is the single source of correctness**
+The cache at `.opencode/explore-cache/<hash>.json` is content-addressed via `sha256(query, target_path, thoroughness, model, workspace, prompt_hash, git_head, agent_version).slice(0, 12)`. All eight inputs are required for correctness — dropping any one is a real staleness bug. Specifically: the system prompt content (not just its path) is hashed because `prompts/explore.txt` is a live file in this repo; `git_head` provides natural invalidation on every commit; `agent_version` invalidates when the CLI binary is upgraded. Defaults are expanded BEFORE hashing — `thoroughness: undefined` and `thoroughness: "standard"` must produce the same key. Path normalization happens via `resolveTargetPath` BEFORE hashing — `path: "src"` and `path: "./src"` must produce the same key. Failed results (any `error` event, or empty content) are never written to the cache. Schema version mismatches are treated as misses. If you change the envelope shape on disk, bump `SCHEMA_VERSION` in `src/explore-cache.ts` — that invalidates all existing entries cleanly. Test seam is `__test_setCacheDeps({ readGitHead, readAgentVersion })` per `src/explore-cache.ts`, matching the `__test_setEngramDispatch` pattern.
+
 ## Type safety rules
 
 - No `as` assertions on unknown data. Use the contracts parsers (`parseAgentRunId`, `parsePlanId`, etc.) for ID validation.
@@ -73,13 +83,21 @@ It writes lifecycle artifacts to `.opencode/lifecycle/artifacts/concord/` and sp
 ## Validation before commit
 
 ```bash
-bun run check            # lint:no-zod + typecheck + tests (159+)
-bun run smoke:runtime    # plugin loads, 30 tools present
-bun run doctor -- --json # emits valid canonical HealthReport
-bun run status -- --json # emits valid canonical HealthReport
+bun run check               # lint:no-zod + typecheck + tests (178+)
+bun run smoke:runtime       # plugin loads, 38 tools present
+bun run doctor -- --json    # emits valid canonical HealthReport
+bun run status -- --json    # emits valid canonical HealthReport
 ```
 
 All four must pass before a change is considered done.
+
+Optional, env-gated:
+
+```bash
+bun run smoke:explore-fast  # CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts
+```
+
+Run this when changing `src/explore-fast.ts`, `src/cursor-cli-types.ts`, or anything in the parser path. It exercises the real `agent` binary end-to-end and is skipped by default in `bun run check`.
 
 ## Fleet position
 

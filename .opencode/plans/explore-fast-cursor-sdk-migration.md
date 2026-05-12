@@ -27,6 +27,69 @@ Bugs found and fixed in flight:
 
 Lesson for next time: **run the Phase 0 spikes**. The event-shape mismatch cost one full integration-test round-trip that the spike would have caught in five minutes.
 
+## Phase 7 follow-up (2026-05-12) — plugin-tool registration
+
+Original Phase 7 recommendation was to keep `explore-fast` as an internal library and **not** re-register it as a plugin tool. That decision was reversed after observing that the library had zero in-repo consumers: nothing imported `runExploreFast`, no subpath export existed in `package.json`, and the `explore` / `explore-high` Task subagent types (defined in `~/.config/opencode/opencode.json`) ran through OpenCode's own subagent runtime rather than this library. The earlier README/AGENTS.md framing of "explore subagents are backed by `src/explore-fast.ts`" was aspirational, not current truth.
+
+Resolution: registered `explore_fast` as a plugin tool. Changes:
+- `src/index.ts` — added the `explore_fast` tool block. Thin wrapper around `runExploreFast`.
+- `scripts/runtime-smoke.ts` — `expectedTools` count 36 → 37.
+- `src/plugin-contract.test.ts` — added `"explore_fast"` to the asserted contract list.
+- `README.md` — added an "Exploration" row to the plugin-tools table; rewrote the "Agent-directed exploration" subsection to reflect the plugin-tool entry point (with `runExploreFast` / `streamExploreFast` still callable as internal library functions).
+- `AGENTS.md` — replaced the "intentionally a library, not a plugin tool" invariant with the new contract.
+
+`runExploreFast` / `streamExploreFast` remain exported from the module for internal callers; the plugin tool is a thin wrapper. The SDK rejection (cost) still holds and is documented in AGENTS.md.
+
+## Phase 7 follow-up #2 (2026-05-12) — remove per-call timeouts
+
+Real OpenCode usage of `explore_fast` immediately surfaced a problem: the `quick` tier's 30s default timeout cut off legitimately slow exhaustive explores on large repos. The tested behavior was "tool exists and is callable; hit a 30-second timeout before completing." The library was treating timeouts as its own contract when it should have been deferring to the outer task harness.
+
+Resolution: removed the per-call timeout entirely.
+- `cursor-cli-types.ts` — dropped `"timeout"` from `ExploreFastErrorKind`. No streamer path produces it anymore.
+- `explore-fast.ts` — removed `timeoutMs` from `RunExploreFastInput`. Removed `setTimeout` + `controller.abort("timeout")` and the timeout error branch in `streamExploreFast`. Replaced `THOROUGHNESS_DEFAULTS` (which carried `{ timeoutMs, model }`) with `THOROUGHNESS_MODELS` (just the model literal per tier). Simplified `runExploreFast` — no more `kind`-based partial-output discrimination; first error wins verbatim. Removed the now-unused `ExploreFastErrorKind` import.
+- `src/index.ts` — dropped the `timeout_ms` arg from the plugin-tool schema and the corresponding mapping in `execute`.
+- `explore-fast.test.ts` — deleted the three timeout-specific tests (`reports timeout failures`, `preserves partial assistant output when timing out`, `explicit timeoutMs overrides`). Renamed the partial-output-on-non-timeout test to drop the timeout contrast (it now just asserts "error wins over partial output"). Integration test's `timeoutMs: 30_000` removed; bun-test framework outer timeout bumped to 120s for headroom on slow exhaustive runs.
+- `AGENTS.md` — replaced the "partial output preserved only on timeout" invariant with the new "library does not impose a per-call timeout" rule. Records the directive: do not reintroduce a library-level timer.
+- `README.md` — dropped `timeout_ms` from the plugin-tool args table; updated the thoroughness description (picks the model, not the timeout); added a paragraph explaining the harness owns wall time.
+
+The async-generator `finally` still aborts the controller via `controller.abort("disposed")` when a caller breaks out of `streamExploreFast` early — that's the only remaining cancellation path, and the existing `aborts the subprocess when the caller breaks out of the stream early` test still covers it.
+
+Lesson: design contracts against real usage early. The original 30s default felt safe in isolation but was wrong for the actual orchestrator pattern, which fans out exhaustive explores over large repos. Removing a feature is cheaper than tuning its parameters when the feature itself was the mistake.
+
+## Phase 7 follow-up #3 (2026-05-12) — content-addressed cache
+
+After timeout removal, the next observable cost was duplicate work: an orchestrator that fans out N parallel explores often re-asks similar questions across waves, and each call burns 15-30s of CLI compute that was identical to the previous one. Conductor's other artifacts (plans, brainstorms, audits) are explicitly persisted; explores are the odd one out — single-shot, ephemeral by default.
+
+Chose Design B (content-hash cache) over Design A (slug-based opt-in persistence). The cache is what actually moves the needle on cost; persistence-as-artifact would have given continuity but no compute savings.
+
+Cache key composition (after stress-testing the algorithm — first draft had two real gaps):
+- `sha256({ schema_version, query, target_path, thoroughness, model, workspace, prompt_hash, git_head, agent_version }).slice(0, 12)`
+- All inputs are post-default-expansion and post-canonicalization (path resolved via `resolveTargetPath`, workspace resolved via `path.resolve`).
+- `prompt_hash` is the sha256 of the system prompt content, not its path — `prompts/explore.txt` is a live file in this repo.
+- `git_head` from `git rev-parse HEAD` provides natural invalidation on every commit. Uncommitted working-tree changes are NOT in the key by design (kills hit rate; `cache: false` escape hatch covers the edit-then-query loop).
+- `agent_version` from `agent --version` memoized once per process.
+- 12 hex chars (48 bits) — birthday-collision probability at 100k entries is ~1.8e-5.
+
+Implementation:
+- New file `src/explore-cache.ts` (~250 lines): `computeCacheKey`, `readCache`, `writeCache`, `discardCache`, plus an in-memory inflight map for process-local dedup of concurrent identical queries.
+- Atomic writes via `Bun.write(tmp)` + `rename(tmp, final)` — matches the existing pattern in `plan-artifacts.ts`.
+- Schema versioning on the cached envelope (`schema_version: 1`); mismatches treated as misses.
+- Errored results (non-zero exit, CLI `is_error`, empty content) are never written to the cache.
+- `runExploreFast` wraps the existing drain logic with the cache check and write. `streamExploreFast` never consults the cache — streaming callers bypass by definition.
+- Test seam `__test_setCacheDeps({ readGitHead, readAgentVersion })` matches the `__test_setEngramDispatch` pattern from AGENTS.md.
+
+Surface changes:
+- Library: added `cache?: boolean` to `RunExploreFastInput` (default `true`).
+- Plugin tool: added `cache?: boolean` arg.
+- New tool: `discard_explore_cache` (no args). Tool count 37 → 38.
+- `.gitignore`: added `.opencode/explore-cache/`.
+
+Tests:
+- New `src/explore-cache.test.ts` (15 unit tests) — cache key stability, key invalidation on each input, schema version mismatch, atomic writes, missing-cache-dir creation, inflight dedup lifecycle.
+- Extended `src/explore-fast.test.ts` with 9 integration tests — cache hit/miss, `cache: false` bypass, concurrent dedup, error non-caching, default-expansion equivalence, path normalization, git HEAD invalidation, round-trip via `readCache`.
+
+Lesson: stress-test the hashing algorithm before writing it. First draft missed the system prompt hash and used string concatenation instead of `JSON.stringify`. Both were caught by walking through "what inputs determine the CLI's output?" — that question is the only way to find the gaps before they ship.
+
 ---
 
 ## Why

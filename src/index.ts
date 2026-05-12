@@ -1,5 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin";
 import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
+import { discardCache as discardExploreCache } from "./explore-cache";
+import { runExploreFast } from "./explore-fast";
 import { createPlanArtifactStore } from "./plan-artifacts";
 import { createWorkflowArtifactTools } from "./workflow-artifacts";
 import type { ContextUsageClient } from "./workflow-tools/context-usage";
@@ -224,6 +226,55 @@ export function createConductorHooks(deps: ConductorPluginDeps = {}) {
         },
         async execute(args, context) {
           return designs.discard(context.directory, args);
+        },
+      }),
+      explore_fast: tool({
+        description:
+          "Fast model-reasoned codebase exploration via the Cursor `agent` CLI (Composer-2 Fast by default). Returns a structured markdown report with file:line citations — the same shape the `explore` / `explore-high` Task subagents return. Use for narrative discovery (cues, ranked file lists, behavioral tracing) when you want the answer in one tool call instead of spawning a full Task subagent. For deterministic file-dependency, impact-cone, API-surface, or change-risk truth use the codemem_* tools instead. The CLI runs to completion; the outer task harness owns the wall-clock budget. Results are cached at .opencode/explore-cache/ keyed by content hash; identical repeat queries return instantly without re-spawning the CLI. Cache invalidates automatically on every commit (git HEAD is in the key) and on prompts/explore.txt content changes.",
+        args: {
+          query: tool.schema
+            .string()
+            .describe(
+              "Natural-language exploration question. Include directories or globs, the question to answer, and explicit non-goals when scoping a parallel discovery wave.",
+            ),
+          path: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Optional workspace-relative path to focus the exploration on. Rejected if it escapes the workspace root.",
+            ),
+          thoroughness: tool.schema
+            .enum(["quick", "standard", "exhaustive"])
+            .optional()
+            .describe(
+              "Search depth: 'quick' (first match), 'standard' (default — 2-3 grep passes plus cross-references), 'exhaustive' (map all occurrences, re-exports, tests, configs, consumers). Picks the default model — exhaustive upgrades to composer-2.",
+            ),
+          cache: tool.schema
+            .boolean()
+            .optional()
+            .describe(
+              "Default true. Set false to bypass the cache and force a fresh CLI call — use when you've edited code since the last cached run on the same query (uncommitted changes don't auto-invalidate; only commits do).",
+            ),
+        },
+        async execute(args, context) {
+          return runExploreFast({
+            directory: context.directory,
+            query: args.query,
+            path: args.path,
+            thoroughness: args.thoroughness,
+            cache: args.cache,
+          });
+        },
+      }),
+      discard_explore_cache: tool({
+        description:
+          "Clear the .opencode/explore-cache/ directory. Use when the cache has drifted (e.g., you suspect Cursor changed model behavior server-side, or you want a clean baseline). Cache invalidates automatically on every commit; this tool is the manual override.",
+        args: {},
+        async execute(_args, context) {
+          const cleared = await discardExploreCache(context.directory);
+          return cleared === 0
+            ? "explore cache: nothing to clear"
+            : `explore cache: cleared ${cleared} ${cleared === 1 ? "entry" : "entries"}`;
         },
       }),
     },

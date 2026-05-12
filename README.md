@@ -17,7 +17,7 @@ Conductor owns:
 - Journal (`.opencode/journal.jsonl`), handoff (`.opencode/handoff.md`), audits (`.opencode/audits/`)
 - Concord lifecycle artifacts — declarative (`.opencode/lifecycle/artifacts/concord/`)
 - Event spine (`.opencode/spine/events.sqlite`)
-- Agent-directed exploration (`explore` / `explore-high` via Task)
+- Agent-directed exploration (`explore` / `explore-high` Task subagents, backed by `src/explore-fast.ts` wrapping the Cursor `agent` CLI)
 - Context budget diagnostics (`context_usage`)
 
 Conductor does NOT own:
@@ -49,11 +49,13 @@ For local development:
 }
 ```
 
-## Plugin tools (31)
+## Plugin tools (38)
 
 | Category | Tools |
 |---|---|
 | Plans | `persist_final_plan`, `read_final_plan`, `discard_final_plan`, `persist_subplan`, `read_subplan`, `discard_subplan` |
+| Brainstorms | `persist_brainstorm`, `read_brainstorm`, `discard_brainstorm` |
+| Designs | `persist_design`, `read_design`, `discard_design` |
 | Runs | `run_init`, `run_update`, `run_finish` |
 | Status | `status_write`, `status_read`, `status_done` |
 | Progress | `progress_update`, `progress_read`, `progress_done` |
@@ -61,10 +63,56 @@ For local development:
 | Journal | `journal_write`, `journal_read`, `journal_done` |
 | Handoff | `handoff_write`, `handoff_read`, `handoff_done` |
 | Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher) |
-| Exploration | `explore`, `explore-high` |
 | Diagnostics | `context_usage` |
+| Exploration | `explore_fast`, `discard_explore_cache` (Cursor `agent` CLI wrapper + cache management — see next section) |
 
 The canonical tool list is enforced in `src/plugin-contract.test.ts`. The runtime smoke script (`scripts/runtime-smoke.ts`) asserts the tool count on every run.
+
+## Agent-directed exploration (`explore_fast` plugin tool)
+
+`explore_fast` is a plugin tool that runs fast, model-reasoned codebase exploration through the Cursor `agent` CLI (Composer-2 Fast by default). It is the single-shot counterpart to the `explore` / `explore-high` Task subagents — same prompt template (`prompts/explore.txt`), same structured markdown output with file:line citations, but invoked directly in one tool call instead of spawning a full subagent session.
+
+The tool accepts:
+
+| Arg | Type | Notes |
+|---|---|---|
+| `query` | string (required) | Natural-language exploration question. Include directories or globs, the question to answer, and explicit non-goals. |
+| `path` | string (optional) | Workspace-relative focus path. Rejected if it escapes the workspace root. |
+| `thoroughness` | `"quick"` / `"standard"` / `"exhaustive"` (optional) | Search depth tier. Picks the default model: `quick` and `standard` use `composer-2-fast`; `exhaustive` upgrades to `composer-2` (the `explore-high` distinction). |
+| `cache` | boolean (optional) | Default `true`. Set `false` to bypass the cache and force a fresh CLI call. |
+
+The library does not impose a per-call timeout — the Cursor CLI runs to completion and the outer task harness owns the wall-clock budget. Callers that want a hard cap should bound the surrounding task or break out of `streamExploreFast` early (the async generator's cleanup aborts the subprocess via SIGTERM).
+
+### Cache
+
+Results are persisted at `.opencode/explore-cache/<hash>.json` (gitignored) and returned instantly on repeat queries. The cache key is `sha256(query, target_path, thoroughness, model, workspace, prompt_hash, git_head, agent_version).slice(0, 12)`, so it invalidates automatically when:
+
+- Any input to the query changes.
+- The system prompt at `prompts/explore.txt` is edited (its content is hashed into the key).
+- A commit lands (`git rev-parse HEAD` is hashed in).
+- The Cursor CLI binary is upgraded (`agent --version` is hashed in — memoized once per process).
+
+The cache does NOT invalidate on uncommitted working-tree changes — by design, to keep hit rate high during dev loops. If you've edited code you're about to query, pass `cache: false` once to force a fresh call. Concurrent identical queries within the same process dedupe through an in-memory inflight map (only one CLI invocation runs even if two callers fire the same query simultaneously).
+
+Clear the entire cache via the `discard_explore_cache` plugin tool. Failed/errored explores are never cached — only successful results with non-empty content are persisted.
+
+Implementation lives in `src/explore-fast.ts` and `src/explore-cache.ts`. The same modules expose two additional functions for internal callers (no plugin-tool surface):
+
+- `runExploreFast(input): Promise<string>` — drains the CLI's output stream into a final string. The `explore_fast` plugin tool is a thin wrapper around this.
+- `streamExploreFast(input): AsyncGenerator<ExploreFastEvent>` — yields typed events (`assistant_text`, `tool_call`, `tool_result`, `error`, `done`) as the CLI emits them, for callers that want incremental output.
+
+Key contracts:
+
+- **Typed argv.** Every flag (`--model`, `--mode`, `--output-format`, `--workspace`) is a compile-time literal via `CursorInvocation` + `toArgv()` in `src/cursor-cli-types.ts`. Flag typos are TypeScript errors, not runtime mysteries.
+- **Stream-json envelope.** The wrapper parses the Cursor CLI's `--output-format stream-json` output and maps `system` / `init` / `user` / `assistant` (with nested `message.content[]`) / `result` events into the internal `ExploreFastEvent` tagged union. Unknown event types are dropped at parse time — forward-compatible with new CLI events.
+- **Thoroughness tier drives budget.** `thoroughness: "quick" | "standard" | "exhaustive"` (default `standard`) maps to `timeoutMs` and `model` defaults:
+  - `quick` → 30s, `composer-2-fast`
+  - `standard` → 120s, `composer-2-fast`
+  - `exhaustive` → 300s, `composer-2` (matches the `explore-high` "strongest reasoning" intent)
+
+  The selected tier is also written into the prompt so the agent adapts its search depth per `prompts/explore.txt`. Explicit `timeoutMs` / `model` override the tier defaults.
+- **Partial output preserved on timeout.** When `timeoutMs` elapses with `assistant_text` already streamed, `runExploreFast` returns `[partial output — Cursor CLI timed out after Xms]\n\n<text>` instead of discarding the agent's pre-cancellation work. Non-timeout errors (non-zero exit, CLI `is_error`, spawn failure) still drop partial output — the agent's reasoning is suspect in those cases.
+- **Pricing.** Free with `agent login`. No tokens are billed by Cursor for CLI invocations on a logged-in account. The Cursor SDK (`@cursor/sdk`) was evaluated and explicitly rejected for cost reasons — see `.opencode/plans/explore-fast-cursor-sdk-migration.md` for the decision history.
 
 ## Correlation IDs
 
@@ -101,14 +149,16 @@ Conductor writes all lifecycle and plan artifacts declaratively to disk. Engram 
 ## Development
 
 ```bash
-bun run check          # lint:no-zod + typecheck + tests (159+)
-bun run smoke:runtime  # assert plugin loads and exposes 31 tools
+bun run check               # lint:no-zod + typecheck + tests (178+)
+bun run smoke:runtime       # assert plugin loads and exposes 38 tools
+bun run smoke:explore-fast  # CURSOR_CLI_INTEGRATION=1 — exercises the real Cursor agent CLI
 bun run doctor -- --json
 bun run status -- --json
 ```
 
 - `check` runs `lint:no-zod` (no Zod import in src/), then `typecheck` (tsgo --noEmit), then `bun test`.
 - `smoke:runtime` loads the plugin in a subprocess and asserts the tool count. It fails fast if a tool registration is missing.
+- `smoke:explore-fast` runs the env-gated integration test against the real `agent` binary. The same test is skipped in `check` / default `bun test` runs.
 
 ## Package structure
 

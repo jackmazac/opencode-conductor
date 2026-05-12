@@ -1,6 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { toArgv, type ExploreFastEvent } from "./cursor-cli-types";
+import {
+  __test_clearCacheDeps,
+  __test_setCacheDeps,
+  discardCache,
+  readCache,
+} from "./explore-cache";
 import {
   runExploreFast,
   streamExploreFast,
@@ -169,6 +178,11 @@ describe("toArgv", () => {
 // ---------------------------------------------------------------------------
 
 describe("runExploreFast", () => {
+  beforeEach(async () => {
+    await discardCache("/tmp/project");
+    __test_clearCacheDeps();
+  });
+
   test("rejects empty queries before creating any subprocess", async () => {
     const { fn, calls } = fakeSpawn({});
     const result = await runExploreFast({
@@ -268,24 +282,6 @@ describe("runExploreFast", () => {
 
     const prompt = calls[0]!.cmd[calls[0]!.cmd.length - 1];
     expect(prompt).toContain("# Thoroughness\nstandard");
-  });
-
-  test("explicit timeoutMs overrides the thoroughness tier default", async () => {
-    // Use a stalling spawn with thoroughness=exhaustive (default 300s) but
-    // an explicit 5ms timeout. If the explicit override didn't win, the test
-    // would hang for the full tier default.
-    const { fn, calls } = stallingSpawn();
-    const result = await runExploreFast({
-      directory: "/tmp/project",
-      query: "find auth flow",
-      systemPrompt: "system",
-      thoroughness: "exhaustive",
-      timeoutMs: 5,
-      spawn: fn,
-    });
-
-    expect(result).toBe("Cursor CLI timed out after 5ms");
-    expect(calls[0]!.signal.reason).toBe("timeout");
   });
 
   test("explicit model overrides the thoroughness tier default", async () => {
@@ -496,41 +492,7 @@ describe("runExploreFast", () => {
     expect(result).toBe("model unavailable");
   });
 
-  test("reports timeout failures and aborts the subprocess when no text was streamed", async () => {
-    const { fn, calls } = stallingSpawn();
-    const result = await runExploreFast({
-      directory: "/tmp/project",
-      query: "find auth flow",
-      systemPrompt: "system",
-      timeoutMs: 5,
-      spawn: fn,
-    });
-
-    expect(result).toBe("Cursor CLI timed out after 5ms");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.signal.aborted).toBe(true);
-    expect(calls[0]!.signal.reason).toBe("timeout");
-  });
-
-  test("preserves partial assistant output when timing out mid-stream", async () => {
-    // The agent has already streamed useful findings before our timeout fires.
-    // Throwing that work away is a real correctness loss for `exhaustive` tier
-    // explores where slow answers still beat empty ones.
-    const partial = "## Auth flow (partial)\n\n- src/auth/login.ts:42 — entrypoint";
-    const { fn, calls } = stallingSpawn({ seed: assistantLine(textContent(partial)) });
-    const result = await runExploreFast({
-      directory: "/tmp/project",
-      query: "find auth flow",
-      systemPrompt: "system",
-      timeoutMs: 5,
-      spawn: fn,
-    });
-
-    expect(result).toBe(`[partial output — Cursor CLI timed out after 5ms]\n\n${partial}`);
-    expect(calls[0]!.signal.reason).toBe("timeout");
-  });
-
-  test("does NOT preserve partial output on non-timeout errors (e.g. non-zero exit)", async () => {
+  test("error wins over any partial assistant output that streamed before the failure", async () => {
     // A non-zero exit means the CLI itself reported failure — the agent's
     // partial reasoning is suspect. Drop it and return the error verbatim.
     const partial = "thinking out loud before crashing…";
@@ -546,7 +508,6 @@ describe("runExploreFast", () => {
       spawn: fn,
     });
 
-    expect(result).not.toContain("[partial output");
     expect(result).not.toContain(partial);
     expect(result).toContain("Cursor CLI failed with exit code 2");
   });
@@ -644,6 +605,254 @@ describe("streamExploreFast", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runExploreFast — content-addressed cache
+// ---------------------------------------------------------------------------
+
+describe("runExploreFast cache", () => {
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(path.join(tmpdir(), "explore-fast-cache-test-"));
+    // Deterministic cache key: pinning git HEAD + agent version means every
+    // test starts from a known cache state.
+    __test_setCacheDeps({
+      readGitHead: async () => "test-head-0000000",
+      readAgentVersion: async () => "agent-test-0.0.0",
+    });
+  });
+
+  afterEach(async () => {
+    __test_clearCacheDeps();
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  const successfulSpawn = () =>
+    fakeSpawn({
+      stdout: streamFromText(
+        assistantLine(textContent("## findings\n\n- src/auth.ts:1 — entry")) + resultLine(""),
+      ),
+    });
+
+  test("hits the cache on the second identical call — no second spawn", async () => {
+    const first = successfulSpawn();
+    const r1 = await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: first.fn,
+    });
+    expect(first.calls).toHaveLength(1);
+    expect(r1).toContain("findings");
+
+    // Second call with a fresh spawn fake — if cache works, fake is never called.
+    const second = fakeSpawn({ stdout: streamFromText("") });
+    const r2 = await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: second.fn,
+    });
+
+    expect(second.calls).toHaveLength(0);
+    expect(r2).toBe(r1);
+  });
+
+  test("misses the cache when any keyed input differs", async () => {
+    const first = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: first.fn,
+    });
+
+    const second = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find SOMETHING ELSE", // different query → different key
+      systemPrompt: "system",
+      spawn: second.fn,
+    });
+
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+  });
+
+  test("cache: false bypasses both read and write", async () => {
+    const first = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      cache: false,
+      spawn: first.fn,
+    });
+
+    // Verify no cache file was written
+    const dir = path.join(workspace, ".opencode", "explore-cache");
+    const result = await Bun.$`ls -1 ${dir} 2>/dev/null || true`.text();
+    expect(result.trim()).toBe("");
+
+    // And the second call still spawns
+    const second = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      cache: false,
+      spawn: second.fn,
+    });
+
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+  });
+
+  test("concurrent identical queries dedupe to a single spawn", async () => {
+    // Both calls fire before either resolves. Without dedup, both spawn.
+    // With dedup, the second awaits the first's promise.
+    const first = successfulSpawn();
+    const second = successfulSpawn();
+
+    const [r1, r2] = await Promise.all([
+      runExploreFast({
+        directory: workspace,
+        query: "concurrent query",
+        systemPrompt: "system",
+        spawn: first.fn,
+      }),
+      runExploreFast({
+        directory: workspace,
+        query: "concurrent query",
+        systemPrompt: "system",
+        spawn: second.fn,
+      }),
+    ]);
+
+    // Exactly one of the two fakes ran — the other was deduped via inflight.
+    const totalCalls = first.calls.length + second.calls.length;
+    expect(totalCalls).toBe(1);
+    expect(r1).toBe(r2);
+  });
+
+  test("does not cache error results", async () => {
+    const { fn } = fakeSpawn({
+      stdout: emptyStream(),
+      stderr: streamFromText("auth failed"),
+      exitCode: 2,
+    });
+    const result = await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: fn,
+    });
+    expect(result).toContain("Cursor CLI failed");
+
+    // Second call should still spawn — error was not cached
+    const second = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: second.fn,
+    });
+    expect(second.calls).toHaveLength(1);
+  });
+
+  test("default expansion: undefined and 'standard' thoroughness share the same cache entry", async () => {
+    const first = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      // thoroughness omitted → defaults to "standard"
+      spawn: first.fn,
+    });
+
+    const second = fakeSpawn({ stdout: streamFromText("") });
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      thoroughness: "standard", // explicit; should hit the same cache entry
+      spawn: second.fn,
+    });
+
+    expect(second.calls).toHaveLength(0);
+  });
+
+  test("path normalization: './' and absolute equivalents share the same cache entry", async () => {
+    const first = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      path: "src",
+      systemPrompt: "system",
+      spawn: first.fn,
+    });
+
+    const second = fakeSpawn({ stdout: streamFromText("") });
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      path: "./src", // same resolved absolute path as "src"
+      systemPrompt: "system",
+      spawn: second.fn,
+    });
+
+    expect(second.calls).toHaveLength(0);
+  });
+
+  test("changing git HEAD invalidates the cache (different key)", async () => {
+    const first = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: first.fn,
+    });
+
+    // Simulate a commit landing
+    __test_setCacheDeps({
+      readGitHead: async () => "different-head-1111111",
+      readAgentVersion: async () => "agent-test-0.0.0",
+    });
+
+    const second = successfulSpawn();
+    await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: second.fn,
+    });
+
+    expect(second.calls).toHaveLength(1);
+  });
+
+  test("writes a cache entry that round-trips via readCache", async () => {
+    const { fn } = successfulSpawn();
+    const result = await runExploreFast({
+      directory: workspace,
+      query: "find auth flow",
+      systemPrompt: "system",
+      spawn: fn,
+    });
+
+    // Inspect what landed on disk
+    const entries = (
+      await Bun.$`ls -1 ${path.join(workspace, ".opencode", "explore-cache")}`.text()
+    )
+      .split("\n")
+      .filter((line) => line.endsWith(".json"));
+    expect(entries).toHaveLength(1);
+
+    const key = entries[0]!.replace(".json", "");
+    const cached = await readCache(workspace, key);
+    expect(cached).toBe(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Integration — exercises real Bun.spawn against the actual `agent` CLI.
 // Skipped by default. Run with:
 //   CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts
@@ -654,10 +863,9 @@ describe.skipIf(process.env.CURSOR_CLI_INTEGRATION !== "1")("integration: real a
     const result = await runExploreFast({
       directory: process.cwd(),
       query: "What does the package.json name field say?",
-      timeoutMs: 30_000,
+      thoroughness: "quick",
     });
     expect(result.length).toBeGreaterThan(0);
     expect(result).not.toContain("Cursor CLI failed");
-    expect(result).not.toContain("timed out");
-  }, 60_000);
+  }, 120_000);
 });
