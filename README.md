@@ -49,21 +49,23 @@ For local development:
 }
 ```
 
-## Plugin tools (38)
+## Plugin tools (45)
 
 | Category | Tools |
 |---|---|
-| Plans | `persist_final_plan`, `read_final_plan`, `discard_final_plan`, `persist_subplan`, `read_subplan`, `discard_subplan` |
+| Plans | `persist_final_plan`, `read_final_plan`, `discard_final_plan`, `persist_subplan`, `read_subplan`, `discard_subplan`, `plan_validate` |
 | Brainstorms | `persist_brainstorm`, `read_brainstorm`, `discard_brainstorm` |
 | Designs | `persist_design`, `read_design`, `discard_design` |
-| Runs | `run_init`, `run_update`, `run_finish` |
+| Runs | `run_init`, `run_update`, `run_finish`, `run_list` |
 | Status | `status_write`, `status_read`, `status_done` |
 | Progress | `progress_update`, `progress_read`, `progress_done` |
 | Audits | `audit_write`, `audit_read`, `audit_done`, `audit_progress_update`, `audit_progress_read`, `audit_progress_done` |
-| Journal | `journal_write`, `journal_read`, `journal_done` |
+| Journal | `journal_write`, `journal_read`, `journal_search`, `journal_done` |
 | Handoff | `handoff_write`, `handoff_read`, `handoff_done` |
 | Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher) |
 | Diagnostics | `context_usage` |
+| Sessions | `session_init` (composite rehydration), `artifact_index` (inventory), `drift_check` (consistency) |
+| Git | `commit` (semantic commit with Conductor convention enforced) |
 | Exploration | `explore_fast`, `discard_explore_cache` (Cursor `agent` CLI wrapper + cache management — see next section) |
 
 The canonical tool list is enforced in `src/plugin-contract.test.ts`. The runtime smoke script (`scripts/runtime-smoke.ts`) asserts the tool count on every run.
@@ -149,9 +151,10 @@ Conductor writes all lifecycle and plan artifacts declaratively to disk. Engram 
 ## Development
 
 ```bash
-bun run check               # lint:no-zod + typecheck + tests (178+)
-bun run smoke:runtime       # assert plugin loads and exposes 38 tools
+bun run check               # lint:no-zod + typecheck + tests (260+)
+bun run smoke:runtime       # assert plugin loads and exposes 45 tools
 bun run smoke:explore-fast  # CURSOR_CLI_INTEGRATION=1 — exercises the real Cursor agent CLI
+bun run smoke:commit        # CONDUCTOR_GIT_INTEGRATION=1 — real git commit in a temp repo
 bun run doctor -- --json
 bun run status -- --json
 ```
@@ -159,6 +162,7 @@ bun run status -- --json
 - `check` runs `lint:no-zod` (no Zod import in src/), then `typecheck` (tsgo --noEmit), then `bun test`.
 - `smoke:runtime` loads the plugin in a subprocess and asserts the tool count. It fails fast if a tool registration is missing.
 - `smoke:explore-fast` runs the env-gated integration test against the real `agent` binary. The same test is skipped in `check` / default `bun test` runs.
+- `smoke:commit` runs the env-gated integration test for the `commit` tool (real `git` in a temp directory). Skipped unless `CONDUCTOR_GIT_INTEGRATION=1`.
 
 ## Package structure
 

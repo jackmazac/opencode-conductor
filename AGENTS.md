@@ -83,8 +83,8 @@ The cache at `.opencode/explore-cache/<hash>.json` is content-addressed via `sha
 ## Validation before commit
 
 ```bash
-bun run check               # lint:no-zod + typecheck + tests (178+)
-bun run smoke:runtime       # plugin loads, 38 tools present
+bun run check               # lint:no-zod + typecheck + tests (260+)
+bun run smoke:runtime       # plugin loads, 45 tools present
 bun run doctor -- --json    # emits valid canonical HealthReport
 bun run status -- --json    # emits valid canonical HealthReport
 ```
@@ -95,9 +95,12 @@ Optional, env-gated:
 
 ```bash
 bun run smoke:explore-fast  # CURSOR_CLI_INTEGRATION=1 bun test src/explore-fast.test.ts
+bun run smoke:commit        # CONDUCTOR_GIT_INTEGRATION=1 bun test src/workflow-tools/commit.test.ts
 ```
 
-Run this when changing `src/explore-fast.ts`, `src/cursor-cli-types.ts`, or anything in the parser path. It exercises the real `agent` binary end-to-end and is skipped by default in `bun run check`.
+Run `smoke:explore-fast` when changing `src/explore-fast.ts`, `src/cursor-cli-types.ts`, or anything in the parser path. It exercises the real `agent` binary end-to-end and is skipped by default in `bun run check`.
+
+Run `smoke:commit` when changing `src/workflow-tools/commit.ts` (spawn seam or path validation). It performs a real `git init` + commit in a temp directory and is skipped by default in `bun run check`.
 
 ## Fleet position
 
@@ -105,7 +108,30 @@ Conductor is downstream of `opencode-host-adapter` (wraps it via `wrapPlugin`) a
 
 ## Workflow tool conventions
 
-Every workflow tool category follows a write/read/done trio where applicable. Inputs are validated through contracts parsers before use. Outputs are structured JSON — never free-form strings. Tools fail fast on bad IDs with a clear `reason` field in the error shape. All file paths are scoped to the workspace root; tools do not escape the workspace boundary.
+Every workflow tool category follows a write/read/done trio where applicable. Inputs are validated through contracts parsers before use. All file paths are scoped to the workspace root; tools do not escape the workspace boundary.
+
+### Error-shape convention
+
+- **Throw `Error`** for invariant violations the caller can't recover from at runtime: invalid slug regex, unknown enum value, schema validation failure, malformed contracts ID. OpenCode surfaces these as tool errors, signaling "you called this tool wrong."
+- **Return error strings** for runtime conditions the caller can recover from: file not found ("no audit file for X"), CLI exited non-zero, external service unavailable. These read as normal tool output and the model can adapt without an explicit failure.
+
+The split is observable today across `journal.write` (throws on invalid type), `progress.update` (throws on invalid status), `audit.read` (returns "no audit file for X" string), and `explore_fast`'s validation path (string returns for empty query / out-of-workspace path). New tools should follow this rule.
+
+### Result-envelope convention
+
+- **JSON-stringified objects** for tools that exist primarily to *return structured data the orchestrator parses*: `run_init`, `run_update`, `run_finish`, `commit`, `artifact_index`, `session_init`, `run_list`, `plan_validate`, `journal_search`, `drift_check`.
+- **Readable strings** for tools that exist primarily to *report a side effect or return human-facing content*: `journal_write`, `progress_update`, `status_write`, `handoff_write`, `audit_write`, all `discard_*` / `done` tools, `explore_fast` (returns the agent's markdown body), `discard_explore_cache`.
+
+The `conflict_context` tool is the special case — it accepts a `json?: boolean` arg because its caller may want either shape. Don't replicate that pattern for new tools; pick one envelope and commit to it.
+
+### Shared utilities
+
+Slug validation, output formatting, and the `createPlanArtifactStore` / `createProgressStore` factories live in `src/util/` and `src/`. Do **not** copy-paste these helpers into individual workflow-tool files — that's the anti-pattern that motivated Phase 1 of the `conductor-tools-uplift` plan. Specifically:
+
+- Slug validation → `src/util/slug.ts` (`validateSlug(slug, { example })`).
+- Output formatting → `src/util/format.ts` (`cap`, `rel`, `formatReadResult`).
+- Plan/subplan/brainstorm/design artifact stores → `createPlanArtifactStore` in `src/plan-artifacts.ts`.
+- Progress / audit-progress artifact stores → `createProgressStore` in `src/progress-artifacts.ts`.
 
 ## Links
 
