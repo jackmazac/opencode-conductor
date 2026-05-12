@@ -2,14 +2,14 @@
 
 **Slug:** `conductor-tools-uplift`
 **Drafted:** 2026-05-12
-**Status:** Shipped with automated verification (2026-05-12 follow-up): `bun run check` (266 tests), `bun run smoke:runtime` (45 tools), `bun run smoke:explore-fast`, `bun run smoke:commit`. Unit tests added for all seven new tools plus `pathExists` directory scans (fixes `Bun.file(dir).exists()` false negatives on directories).
+**Status:** Shipped with automated verification (2026-05-12 follow-up): `bun run check` (264 pass, 2 skip, 266 ran), `bun run smoke:runtime` (45 tools), `bun run smoke:explore-fast`, `bun run smoke:commit`. Unit tests added for all seven new tools plus `pathExists` directory scans (fixes `Bun.file(dir).exists()` false negatives on directories).
 **Scope:** Eight refactor items from the Tier 1 + 2 audit findings, plus seven new plugin tools from the Tier 1 + 2 brainstorm.
 **Out of scope:** Tier 3 audit items (cosmetic-only), Tier 3 new tools (`task_dispatch`, `workspace_info`, `spine_query`, `changelog_emit`, `memory_correlate`), anything outside the `src/workflow-tools/` surface, anything that touches Engram/Codemem/Concord internals.
 
 ### Verification commands (post–test harness)
 
 ```bash
-bun run check               # full suite — typecheck clean; 266 tests (2 skipped by default)
+bun run check               # full suite — typecheck clean; 264 pass, 2 skip (266 ran)
 bun run smoke:runtime       # {"ok":true,"expected_tools":45,"missing":[]}
 bun run smoke:explore-fast  # unchanged behavior
 bun run smoke:commit        # CONDUCTOR_GIT_INTEGRATION=1 — real git binary
