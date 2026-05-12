@@ -1,36 +1,20 @@
+import path from "node:path";
+import { mkdir, readdir, rename, rmdir, stat } from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
-import path from "path";
-import { mkdir, readdir } from "node:fs/promises";
-import fs from "node:fs";
 
-const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+import { cap, rel } from "../util/format";
+import { pathExists } from "../util/path-exists";
+import { validateSlug } from "../util/slug";
+
 const READ_CAP = 3000;
+const AUDIT_SLUG_EXAMPLE = "auth-surface, api-audit-0.18";
 
-function validate(slug: string) {
-  if (slug.length > 64 || !SLUG_RE.test(slug))
-    throw new Error(
-      `invalid slug "${slug}" — use lowercase words separated by hyphens or dots (e.g. auth-surface, api-audit-0.18)`,
-    );
-}
-
-function dir(directory: string) {
+function dir(directory: string): string {
   return path.join(directory, ".opencode", "audits");
 }
 
-function target(directory: string, slug: string) {
+function target(directory: string, slug: string): string {
   return path.join(dir(directory), `${slug}.md`);
-}
-
-function rel(directory: string, file: string) {
-  return path.relative(directory, file);
-}
-
-function cap(text: string, limit: number) {
-  if (text.length <= limit) return text;
-  return (
-    text.slice(0, limit) +
-    `\n\n[truncated — ${text.length - limit} chars omitted, stored audit is complete]`
-  );
 }
 
 export const write = tool({
@@ -43,12 +27,12 @@ export const write = tool({
     content: tool.schema.string().describe("Markdown content for the persisted audit"),
   },
   async execute(args, context) {
-    validate(args.slug);
+    validateSlug(args.slug, { example: AUDIT_SLUG_EXAMPLE });
     await mkdir(dir(context.directory), { recursive: true });
     const dest = target(context.directory, args.slug);
     const tmp = `${dest}.tmp`;
     await Bun.write(tmp, args.content);
-    fs.renameSync(tmp, dest);
+    await rename(tmp, dest);
     return `wrote audit ${args.slug}\nfile: ${rel(context.directory, dest)}`;
   },
 });
@@ -64,22 +48,22 @@ export const read = tool({
   },
   async execute(args, context) {
     if (args.slug) {
-      validate(args.slug);
+      validateSlug(args.slug, { example: AUDIT_SLUG_EXAMPLE });
       const dest = target(context.directory, args.slug);
       if (!(await Bun.file(dest).exists())) return `no audit file for ${args.slug}`;
-      const mtime = fs.statSync(dest).mtime.toISOString();
+      const fileStat = await stat(dest);
       const raw = await Bun.file(dest).text();
-      return `File: ${rel(context.directory, dest)}\nLast updated: ${mtime} (${raw.length} chars)\n\n${cap(raw, READ_CAP)}`;
+      return `File: ${rel(context.directory, dest)}\nLast updated: ${fileStat.mtime.toISOString()} (${raw.length} chars)\n\n${cap(raw, READ_CAP)}`;
     }
     const base = dir(context.directory);
-    if (!fs.existsSync(base)) return "no audit files";
+    if (!(await pathExists(base))) return "no audit files";
     const entries = (await readdir(base)).filter((f) => f.endsWith(".md")).sort();
     if (entries.length === 0) return "no audit files";
     const lines = await Promise.all(
       entries.map(async (f) => {
         const full = path.join(base, f);
         const slug = f.replace(/\.md$/, "");
-        const mtime = fs.statSync(full).mtime.toISOString();
+        const fileStat = await stat(full);
         const text = await Bun.file(full).text();
         const title =
           text
@@ -87,7 +71,7 @@ export const read = tool({
             .find((line) => line.startsWith("# "))
             ?.slice(2)
             .trim() || "(untitled audit)";
-        return `${slug} | ${title} | updated ${mtime} | file ${rel(context.directory, full)}`;
+        return `${slug} | ${title} | updated ${fileStat.mtime.toISOString()} | file ${rel(context.directory, full)}`;
       }),
     );
     return lines.join("\n");
@@ -105,19 +89,19 @@ export const done = tool({
   },
   async execute(args, context) {
     if (args.slug) {
-      validate(args.slug);
+      validateSlug(args.slug, { example: AUDIT_SLUG_EXAMPLE });
       const dest = target(context.directory, args.slug);
       if (!(await Bun.file(dest).exists())) return `no audit file for ${args.slug}`;
       await Bun.file(dest).delete();
       return `removed audit ${args.slug}\nfile: ${rel(context.directory, dest)}`;
     }
     const base = dir(context.directory);
-    if (!fs.existsSync(base)) return "no audit files to clean";
+    if (!(await pathExists(base))) return "no audit files to clean";
     const entries = (await readdir(base)).filter((f) => f.endsWith(".md"));
     if (entries.length === 0) return "no audit files to clean";
     const files = entries.map((f) => path.join(base, f));
     await Promise.all(files.map((file) => Bun.file(file).delete()));
-    if ((await readdir(base)).length === 0) fs.rmdirSync(base);
+    if ((await readdir(base)).length === 0) await rmdir(base);
     return `removed ${entries.length} audit files\nfiles:\n${files.map((file) => rel(context.directory, file)).join("\n")}`;
   },
 });

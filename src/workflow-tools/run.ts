@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import fs from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { parsePlanId } from "@jackmazac/opencode-fleet-contracts";
 import { tool } from "@opencode-ai/plugin";
 import { readPlanIndex } from "../plan-artifacts.ts";
+
+import { rel } from "../util/format";
+import { pathExists } from "../util/path-exists";
 
 type RunRecord = {
   schema_version: 1;
@@ -58,10 +60,6 @@ function statusDir(directory: string) {
   return path.join(directory, ".opencode", "status");
 }
 
-function rel(directory: string, file: string) {
-  return path.relative(directory, file);
-}
-
 function workspaceId(directory: string) {
   const hash = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16);
   return `ws_${hash}`;
@@ -94,7 +92,7 @@ function runPath(directory: string, id: string) {
 
 async function loadRun(directory: string, id: string): Promise<RunRecord> {
   const file = runPath(directory, id);
-  if (!fs.existsSync(file)) throw new Error(`run not found: ${id}`);
+  if (!(await Bun.file(file).exists())) throw new Error(`run not found: ${id}`);
   const parsed: unknown = JSON.parse(await Bun.file(file).text());
   if (!isRunRecord(parsed)) throw new Error(`invalid run record: ${id}`);
   return parsed;
@@ -109,14 +107,53 @@ async function writeRun(
   const dest = runPath(directory, record.agent_run_id);
   const tmp = `${dest}.tmp`;
   await Bun.write(tmp, JSON.stringify(record, null, 2));
-  fs.renameSync(tmp, dest);
+  await rename(tmp, dest);
   const runFile = rel(directory, dest);
   const status = statusMirror(record, runFile);
   const statusDest = path.join(statusDir(directory), `${status.slug}.json`);
   const statusTmp = `${statusDest}.tmp`;
   await Bun.write(statusTmp, JSON.stringify(status, null, 2));
-  fs.renameSync(statusTmp, statusDest);
+  await rename(statusTmp, statusDest);
   return { runFile, statusFile: rel(directory, statusDest), statusSlug: status.slug };
+}
+
+/** Exposed for use by run_list, artifact_index, drift_check, session_init. */
+export async function readAllRuns(directory: string): Promise<RunRecord[]> {
+  const base = dir(directory);
+  if (!(await pathExists(base))) return [];
+  const entries = (await readdir(base)).filter((f) => f.endsWith(".json"));
+  const records = await Promise.all(
+    entries.map(async (f) => {
+      try {
+        const parsed: unknown = JSON.parse(await Bun.file(path.join(base, f)).text());
+        return isRunRecord(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return records.filter((r): r is RunRecord => r !== null);
+}
+
+/** Exposed for composite tools. Returns workspace-relative run file paths. */
+export async function listRunFiles(
+  directory: string,
+): Promise<Array<{ id: string; path: string; mtime: string }>> {
+  const base = dir(directory);
+  if (!(await pathExists(base))) return [];
+  const entries = (await readdir(base)).filter((f) => f.endsWith(".json"));
+  const results = await Promise.all(
+    entries.map(async (f) => {
+      const full = path.join(base, f);
+      const fileStat = await stat(full);
+      return {
+        id: f.replace(/\.json$/, ""),
+        path: rel(directory, full),
+        mtime: fileStat.mtime.toISOString(),
+      };
+    }),
+  );
+  return results.sort((a, b) => b.mtime.localeCompare(a.mtime));
 }
 
 function statusMirror(record: RunRecord, runFile: string): StatusMirror {
@@ -303,6 +340,62 @@ export const update = tool({
         file: files.runFile,
         status_slug: files.statusSlug,
         status_file: files.statusFile,
+      },
+      null,
+      2,
+    );
+  },
+});
+
+export const list = tool({
+  description:
+    "List structured run records with optional filtering by status, plan slug, or agent type. Closes the trio for run_init / run_update / run_finish. Returns a JSON array sorted by most-recent-first. Use during session rehydration or to audit which runs are still in-progress.",
+  args: {
+    status: tool.schema
+      .enum(["initialized", "in_progress", "done", "blocked", "cancelled"])
+      .optional()
+      .describe("Filter by run status. Omit to include all statuses."),
+    plan_slug: tool.schema.string().optional().describe("Filter to runs for a specific plan slug."),
+    agent_type: tool.schema
+      .string()
+      .optional()
+      .describe("Filter to runs of a specific agent type (e.g. executor-high)."),
+    limit: tool.schema
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Maximum number of records to return. Default 20, max 100."),
+  },
+  async execute(args, context) {
+    const all = await readAllRuns(context.directory);
+    let filtered = all;
+    if (args.status) filtered = filtered.filter((r) => r.status === args.status);
+    if (args.plan_slug) filtered = filtered.filter((r) => r.plan_slug === args.plan_slug);
+    if (args.agent_type) filtered = filtered.filter((r) => r.agent_type === args.agent_type);
+    filtered.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const requested = args.limit ?? 20;
+    const limit = Math.min(Math.max(1, Math.floor(requested)), 100);
+    const shown = filtered.slice(0, limit);
+    const records = shown.map((r) => ({
+      agent_run_id: r.agent_run_id,
+      status: r.status,
+      plan_slug: r.plan_slug,
+      plan_id: r.plan_id,
+      wave_id: r.wave_id,
+      task_id: r.task_id,
+      agent_type: r.agent_type,
+      goal: r.goal,
+      updated_at: r.updated_at,
+      finished_at: r.finished_at,
+      file: rel(context.directory, runPath(context.directory, r.agent_run_id)),
+    }));
+    return JSON.stringify(
+      {
+        total: filtered.length,
+        shown: shown.length,
+        limit,
+        records,
       },
       null,
       2,

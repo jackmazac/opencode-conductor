@@ -2,7 +2,8 @@ import path from "node:path";
 import { mkdir, readdir, rename, rmdir, stat } from "node:fs/promises";
 import { newPlanId, parsePlanId } from "@jackmazac/opencode-fleet-contracts";
 
-const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+import { rel } from "./util/format";
+import { slugPattern, validateSlug } from "./util/slug";
 
 export type PlanArtifactFolder = "plans" | "subplans" | "brainstorms" | "designs";
 
@@ -74,7 +75,7 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
           2,
         );
       }
-      return `wrote ${config.artifactName} ${args.slug}\nfile: ${relative(directory, dest)}`;
+      return `wrote ${config.artifactName} ${args.slug}\nfile: ${rel(directory, dest)}`;
     },
 
     async read(directory: string, rawArgs: unknown) {
@@ -124,7 +125,7 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
           return `no ${config.artifactName} file for ${args.slug}`;
         await Bun.file(dest).delete();
         if (config.folder === "plans") await removePlanIndexEntry(directory, args.slug);
-        return `removed ${config.artifactName} ${args.slug}\nfile: ${relative(directory, dest)}`;
+        return `removed ${config.artifactName} ${args.slug}\nfile: ${rel(directory, dest)}`;
       }
 
       const base = baseDir(directory);
@@ -139,7 +140,7 @@ export function createPlanArtifactStore(config: PlanArtifactStoreConfig) {
         if (!isNotFound(error)) throw error;
       }
       return `removed ${entries.length} ${config.artifactName} files\nfiles:\n${files
-        .map((file) => relative(directory, file))
+        .map((file) => rel(directory, file))
         .join("\n")}`;
     },
   };
@@ -228,7 +229,7 @@ async function upsertPlanIndex(
   const entry: PlanIndexEntry = {
     plan_id: existing?.plan_id ?? newPlanId(),
     plan_slug: slug,
-    path: relative(directory, dest),
+    path: rel(directory, dest),
     created_at: existing?.created_at ?? now,
     updated_at: now,
   };
@@ -285,7 +286,7 @@ function isPlanIndexEntry(value: unknown): value is PlanIndexEntry {
     parsePlanId(value.plan_id).ok &&
     typeof value.plan_slug === "string" &&
     value.plan_slug.length <= 64 &&
-    SLUG_RE.test(value.plan_slug) &&
+    slugPattern.test(value.plan_slug) &&
     typeof value.path === "string" &&
     typeof value.created_at === "string" &&
     typeof value.updated_at === "string"
@@ -374,14 +375,6 @@ function parseFence(line: string): Fence | undefined {
   return undefined;
 }
 
-function validateSlug(slug: string) {
-  if (slug.length > 64 || !SLUG_RE.test(slug)) {
-    throw new Error(
-      `invalid slug "${slug}" - use lowercase words separated by hyphens or dots (e.g. auth-refactor, ugi-render-0.18-hardcutover)`,
-    );
-  }
-}
-
 function parseHeading(line: string): Heading | undefined {
   const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
   if (!match) return undefined;
@@ -416,7 +409,7 @@ async function listArtifacts(input: { directory: string; base: string; missingMe
       const fileStat = await stat(full);
       const text = await Bun.file(full).text();
       const title = extractTitle(text);
-      return `${slug} | ${title} | ${text.length} chars | updated ${fileStat.mtime.toISOString()} | file ${relative(
+      return `${slug} | ${title} | ${text.length} chars | updated ${fileStat.mtime.toISOString()} | file ${rel(
         input.directory,
         full,
       )}`;
@@ -447,11 +440,7 @@ function formatReadResult(input: {
   length?: number;
 }) {
   const length = input.length === undefined ? "" : ` (${input.length} chars)`;
-  return `File: ${relative(input.directory, input.file)}\nLast updated: ${input.mtime}${length}\n\n${input.content}`;
-}
-
-function relative(directory: string, file: string) {
-  return path.relative(directory, file);
+  return `File: ${rel(input.directory, input.file)}\nLast updated: ${input.mtime}${length}\n\n${input.content}`;
 }
 
 function isNotFound(error: unknown) {

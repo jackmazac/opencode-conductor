@@ -1,9 +1,12 @@
+import path from "node:path";
+import { mkdir, readdir, rename, rmdir, stat } from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
-import path from "path";
-import { mkdir, readdir } from "node:fs/promises";
-import fs from "node:fs";
 
-const SLUG_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+import { rel } from "../util/format";
+import { pathExists } from "../util/path-exists";
+import { validateSlug } from "../util/slug";
+
+const STATUS_SLUG_EXAMPLE = "api-routes, db-schema-0.18";
 const READ_LIMIT = 10;
 const READ_FIELD_CAP = 240;
 const READ_LIST_ITEM_CAP = 160;
@@ -22,39 +25,28 @@ type Status = {
   updated: string;
 };
 
-function validate(slug: string) {
-  if (slug.length > 64 || !SLUG_RE.test(slug))
-    throw new Error(
-      `invalid slug "${slug}" - use lowercase words separated by hyphens or dots (e.g. api-routes, db-schema-0.18)`,
-    );
-}
-
-function dir(directory: string) {
+function dir(directory: string): string {
   return path.join(directory, ".opencode", "status");
 }
 
-function target(directory: string, slug: string) {
+function target(directory: string, slug: string): string {
   return path.join(dir(directory), `${slug}.json`);
 }
 
-function legacyTarget(directory: string, slug: string) {
+function legacyTarget(directory: string, slug: string): string {
   return path.join(dir(directory), `${slug}.md`);
 }
 
-function rel(directory: string, file: string) {
-  return path.relative(directory, file);
-}
-
-function cap(text: string | undefined, limit = READ_FIELD_CAP) {
+function compact(text: string | undefined, limit = READ_FIELD_CAP): string | undefined {
   if (!text) return undefined;
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > limit ? `${clean.slice(0, limit)}...` : clean;
 }
 
-function renderList(items: string[]) {
+function renderList(items: string[]): string {
   const shown = items
     .slice(0, READ_LIST_ITEM_LIMIT)
-    .map((item) => cap(item, READ_LIST_ITEM_CAP) || "");
+    .map((item) => compact(item, READ_LIST_ITEM_CAP) || "");
   const omitted = items.length - shown.length;
   return `${shown.join("; ") || "none"}${omitted > 0 ? `; ... (${omitted} omitted)` : ""}`;
 }
@@ -70,19 +62,19 @@ function emptyStatus(slug: string): Status {
   };
 }
 
-async function loadStatus(directory: string, slug: string) {
+async function loadStatus(directory: string, slug: string): Promise<Status> {
   const dest = target(directory, slug);
-  if (!fs.existsSync(dest)) return emptyStatus(slug);
+  if (!(await Bun.file(dest).exists())) return emptyStatus(slug);
   return { ...emptyStatus(slug), ...JSON.parse(await Bun.file(dest).text()) };
 }
 
-function render(status: Status, file?: string) {
+function render(status: Status, file?: string): string {
   const lines = [
     ...(file ? [`File: ${file}`] : []),
     `Last updated: ${status.updated}`,
-    `Goal: ${cap(status.goal) || "(not set)"}`,
-    `Plan: ${cap(status.plan, 80) || "(none)"}${status.wave ? ` | Wave: ${cap(status.wave, 80)}` : ""}`,
-    `Current: ${cap(status.current, 180) || "(not set)"}`,
+    `Goal: ${compact(status.goal) || "(not set)"}`,
+    `Plan: ${compact(status.plan, 80) || "(none)"}${status.wave ? ` | Wave: ${compact(status.wave, 80)}` : ""}`,
+    `Current: ${compact(status.current, 180) || "(not set)"}`,
     `Completed (${status.completed.length}): ${renderList(status.completed)}`,
     `Pending (${status.pending.length}): ${renderList(status.pending)}`,
     `Blockers (${status.blockers.length}): ${renderList(status.blockers)}`,
@@ -120,7 +112,7 @@ export const write = tool({
       .describe("Relevant file paths touched or owned; displayed compactly on read"),
   },
   async execute(args, context) {
-    validate(args.slug);
+    validateSlug(args.slug, { example: STATUS_SLUG_EXAMPLE });
     const existing = await loadStatus(context.directory, args.slug);
     const next: Status = {
       ...existing,
@@ -138,7 +130,7 @@ export const write = tool({
     const dest = target(context.directory, args.slug);
     const tmp = `${dest}.tmp`;
     await Bun.write(tmp, JSON.stringify(next, null, 2));
-    fs.renameSync(tmp, dest);
+    await rename(tmp, dest);
     return `status updated: ${args.slug} (${next.completed.length} done, ${next.pending.length} pending, ${next.blockers.length} blockers)\nfile: ${rel(context.directory, dest)}`;
   },
 });
@@ -155,20 +147,22 @@ export const read = tool({
   async execute(args, context) {
     const base = dir(context.directory);
     if (args.slug) {
-      validate(args.slug);
+      validateSlug(args.slug, { example: STATUS_SLUG_EXAMPLE });
       const dest = target(context.directory, args.slug);
-      if (!fs.existsSync(dest)) return `no status file for ${args.slug}`;
+      if (!(await Bun.file(dest).exists())) return `no status file for ${args.slug}`;
       return render(JSON.parse(await Bun.file(dest).text()), rel(context.directory, dest));
     }
-    if (!fs.existsSync(base)) return "no status files";
-    const entries = (await readdir(base))
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => {
-        const full = path.join(base, f);
-        return { file: f, mtime: fs.statSync(full).mtimeMs };
-      })
-      .sort((a, b) => b.mtime - a.mtime);
-    if (entries.length === 0) return "no status files";
+    if (!(await pathExists(base))) return "no status files";
+    const rawEntries = (await readdir(base)).filter((f) => f.endsWith(".json"));
+    if (rawEntries.length === 0) return "no status files";
+    const entries = await Promise.all(
+      rawEntries.map(async (file) => {
+        const full = path.join(base, file);
+        const fileStat = await stat(full);
+        return { file, mtime: fileStat.mtimeMs };
+      }),
+    );
+    entries.sort((a, b) => b.mtime - a.mtime);
     const shown = entries.slice(0, READ_LIMIT);
     const lines = await Promise.all(
       shown.map(async ({ file }) => {
@@ -194,15 +188,15 @@ export const done = tool({
   async execute(args, context) {
     const base = dir(context.directory);
     if (args.slug) {
-      validate(args.slug);
+      validateSlug(args.slug, { example: STATUS_SLUG_EXAMPLE });
       const dest = target(context.directory, args.slug);
       const legacy = legacyTarget(context.directory, args.slug);
-      const removed = [];
-      if (fs.existsSync(dest)) {
+      const removed: string[] = [];
+      if (await Bun.file(dest).exists()) {
         await Bun.file(dest).delete();
         removed.push(rel(context.directory, dest));
       }
-      if (fs.existsSync(legacy)) {
+      if (await Bun.file(legacy).exists()) {
         await Bun.file(legacy).delete();
         removed.push(rel(context.directory, legacy));
       }
@@ -210,14 +204,26 @@ export const done = tool({
         ? `removed ${args.slug}\nfiles:\n${removed.join("\n")}`
         : `no status file for ${args.slug}`;
     }
-    if (!fs.existsSync(base)) return "no status files to clean";
+    if (!(await pathExists(base))) return "no status files to clean";
     const entries = (await readdir(base)).filter((f) => f.endsWith(".json") || f.endsWith(".md"));
     if (entries.length === 0) return "no status files to clean";
     const files = entries.map((f) => path.join(base, f));
     await Promise.all(files.map((file) => Bun.file(file).delete()));
     try {
-      if ((await readdir(base)).length === 0) fs.rmdirSync(base);
-    } catch {}
+      if ((await readdir(base)).length === 0) await rmdir(base);
+    } catch {
+      // ignore — directory deletion is best-effort
+    }
     return `removed ${entries.length} status files\nfiles:\n${files.map((file) => rel(context.directory, file)).join("\n")}`;
   },
 });
+
+/** Exposed for composite tools (artifact_index, drift_check, session_init). */
+export async function listStatusSlugs(directory: string): Promise<string[]> {
+  const base = dir(directory);
+  if (!(await pathExists(base))) return [];
+  return (await readdir(base))
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, ""))
+    .sort();
+}

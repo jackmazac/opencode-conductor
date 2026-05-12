@@ -40,6 +40,13 @@ const expectedTools = [
   "lifecycle_concord_ingest",
   "explore_fast",
   "discard_explore_cache",
+  "commit",
+  "artifact_index",
+  "run_list",
+  "session_init",
+  "drift_check",
+  "plan_validate",
+  "journal_search",
 ];
 
 async function main() {
