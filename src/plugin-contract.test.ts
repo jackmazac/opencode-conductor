@@ -53,5 +53,9 @@ runPluginContractTests({
     "drift_check",
     "plan_validate",
     "journal_search",
+    "workspace_info",
+    "task_dispatch",
+    "spine_query",
+    "changelog_emit",
   ],
 });

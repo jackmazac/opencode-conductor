@@ -84,7 +84,7 @@ The cache at `.opencode/explore-cache/<hash>.json` is content-addressed via `sha
 
 ```bash
 bun run check               # lint:no-zod + typecheck + tests (260+)
-bun run smoke:runtime       # plugin loads, 45 tools present
+bun run smoke:runtime       # plugin loads, 49 tools present
 bun run doctor -- --json    # emits valid canonical HealthReport
 bun run status -- --json    # emits valid canonical HealthReport
 ```
@@ -126,12 +126,25 @@ The `conflict_context` tool is the special case — it accepts a `json?: boolean
 
 ### Shared utilities
 
-Slug validation, output formatting, and the `createPlanArtifactStore` / `createProgressStore` factories live in `src/util/` and `src/`. Do **not** copy-paste these helpers into individual workflow-tool files — that's the anti-pattern that motivated Phase 1 of the `conductor-tools-uplift` plan. Specifically:
+Slug validation, output formatting, the directory-safe `pathExists`, and the `createPlanArtifactStore` / `createProgressStore` factories live in `src/util/` and `src/`. Do **not** copy-paste these helpers into individual workflow-tool files — that's the anti-pattern that motivated Phase 1 of the `conductor-tools-uplift` plan. Specifically:
 
 - Slug validation → `src/util/slug.ts` (`validateSlug(slug, { example })`).
 - Output formatting → `src/util/format.ts` (`cap`, `rel`, `formatReadResult`).
+- Directory existence checks → `src/util/path-exists.ts` (`pathExists`). `Bun.file(dir).exists()` returns false for real directories — use `pathExists` for any path that may be a directory.
 - Plan/subplan/brainstorm/design artifact stores → `createPlanArtifactStore` in `src/plan-artifacts.ts`.
 - Progress / audit-progress artifact stores → `createProgressStore` in `src/progress-artifacts.ts`.
+
+### Subprocess-spawn injection pattern
+
+Tools that shell out (currently `explore_fast`, `commit`, `workspace_info`, `changelog_emit`) follow a consistent injection pattern so unit tests can drive deterministic fake subprocesses without launching the real binary:
+
+```ts
+let spawnOverride: SpawnFn | undefined;
+export function __test_setXxxSpawn(fn: SpawnFn | undefined): void { spawnOverride = fn; }
+function runSpawn(input) { return (spawnOverride ?? defaultSpawn)(input); }
+```
+
+Production code always passes typed argv (`readonly string[]`) to `Bun.spawn`, never constructs shell strings. New tools that shell out **must** follow this exact pattern — match the test seam name (`__test_setXxxSpawn`), reject `-`-prefixed args, reject shell metacharacters in any caller-controlled path component. Integration tests gated on env vars (e.g. `CONDUCTOR_GIT_INTEGRATION=1`) exercise the real binary; default `bun test` runs use the injected fake.
 
 ## Links
 

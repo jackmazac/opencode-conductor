@@ -2,7 +2,7 @@
 
 **Slug:** `conductor-tools-uplift`
 **Drafted:** 2026-05-12
-**Status:** Shipped with automated verification (2026-05-12 follow-up): `bun run check` (264 pass, 2 skip, 266 ran), `bun run smoke:runtime` (45 tools), `bun run smoke:explore-fast`, `bun run smoke:commit`. Unit tests added for all seven new tools plus `pathExists` directory scans (fixes `Bun.file(dir).exists()` false negatives on directories).
+**Status:** Shipped with automated verification (2026-05-12 follow-up): `bun run check` (264 pass, 2 skip, 266 ran), `bun run smoke:runtime` (45 tools), `bun run smoke:explore-fast`, `bun run smoke:commit`. Unit tests added for all seven new tools plus `pathExists` directory scans (fixes `Bun.file(dir).exists()` false negatives on directories). **Subsequent Tier 3 + orchestrator-prompt follow-up shipped 2026-05-12: tool count 45 → 49, see "Tier 3 follow-up" section below.**
 **Scope:** Eight refactor items from the Tier 1 + 2 audit findings, plus seven new plugin tools from the Tier 1 + 2 brainstorm.
 **Out of scope:** Tier 3 audit items (cosmetic-only), Tier 3 new tools (`task_dispatch`, `workspace_info`, `spine_query`, `changelog_emit`, `memory_correlate`), anything outside the `src/workflow-tools/` surface, anything that touches Engram/Codemem/Concord internals.
 
@@ -660,3 +660,50 @@ The 992 lines decompose into six functional clusters:
 **If anyone needs to modify this file in the future**, the natural split would be three files: `src/workflow-tools/context-usage.ts` (tool registration + summarization), `src/util/session-messages.ts` (the message normalization layer at ~75 lines), `src/util/tokenizer-registry.ts` (the registry + resolution at ~250 lines, mostly data). But this is *premature splitting* today — the file works, the boundaries are visible from the function names, and a refactor risks introducing bugs in code that has clearly been carefully tuned to real provider behavior.
 
 **Action:** none. Leave as-is. Revisit only if a future change touches multiple clusters and would benefit from clearer file boundaries.
+
+**Re-evaluation 2026-05-12 (post-Tier 1+2 ship):** No new evidence. The file last changed in the initial Wave 7.2 port commit (`0a74ec0`), zero churn since. The next agent wrote a 132-line `context-usage.test.ts` against it without friction. No bug reports, no modification requests. Decision stands — no split.
+
+---
+
+## Tier 3 follow-up (2026-05-12) — orchestrator-prompt update + 4 new tools
+
+After the Tier 1 + 2 tests landed, the natural next steps from the original Risk register fired:
+
+1. **Orchestrator-prompt update.** `prompts/orchestrator.txt` now references the new tools at three load-bearing points:
+   - **Session startup section** rewritten to prefer `session_init` (one composite call replaces the documented 8-parallel-tool-call pattern), with the individual reads kept as a fallback list. Also surfaces `drift_check` for resume sanity.
+   - **Commit step** (item 7 under Execute) rewritten to call the `commit` plugin tool with `{ type, scope, outcome, paths, body? }`. Bash fallback documented but secondary.
+   - **Plan persistence step** picked up an optional `plan_validate({ content })` call before `persist_final_plan`.
+   - **"What you do directly" section** now lists `commit`, `journal_search`, `artifact_index`, `run_list` as orchestrator-direct operations.
+
+2. **Tier 3 tools — 4 shipped, 1 deferred.** Tool count 45 → 49.
+
+   **Shipped:**
+   - `workspace_info` — workspace_id (sha256 of root, matches the run-record format), workspace_root, git HEAD / branch / dirty file summary / recent commits. Spawn-injection seam for tests. Falls back gracefully when not a git workspace.
+   - `task_dispatch` — plan-aware prompt formatter. Validates the plan_slug exists in `.opencode/plans/index.json` (catches the drift mode `# Plan slug discipline` was written to prevent), validates `task_id` / `wave_name` formats, builds the canonical `Plan: <slug> | Task: <id> | Wave: <name>` header, returns the assembled prompt for direct paste into OpenCode's `task` tool. Not a true dispatcher (no SDK hook) — explicitly documented as such.
+   - `spine_query` — wraps `SpineStore.listEvents()` with typed filters (plugin, kind, correlation_id, lifecycle_object_id, session_id, since_seq, since_ts_ms, include_stale). Read-only. Returns `{ available: false }` when the spine has never been initialized.
+   - `changelog_emit` — reads `.opencode/progress/<plan_slug>.json`, extracts commit SHAs from wave `summary` fields (matching the orchestrator-side convention of `progress_update({ summary: <commit_hash> })`), runs `git log -1 --format=%s` on each, emits markdown. Unmatched waves (no SHA in summary, status != done, git lookup fail) reported in `unmatched_waves` so the caller knows what was skipped.
+
+   **Deferred: `memory_correlate`.** Investigation showed Engram's cross-tool dispatch surface isn't live yet — even `conflict_context` currently returns `E_ENGRAM_NATIVE_UNAVAILABLE` (the dispatcher pattern exists; the underlying Engram tool ships in a later wave). Adding `memory_correlate` today would mean shipping a tool that always returns the same unavailability stub. That's tool-pollution with zero current value. Revisit once Engram's `memory_correlate` native tool lands and the existing `conflict_context` dispatcher path proves out.
+
+3. **`context-usage.ts` split re-evaluation:** see the section above. Decision stands — no split.
+
+### Implementation notes for Tier 3
+
+- **AGENTS.md gained a "Subprocess-spawn injection pattern" subsection** codifying the `__test_setXxxSpawn` test seam pattern. Three of the four new Tier 3 tools (`workspace_info`, `commit`, `changelog_emit`) use this pattern verbatim; the fourth (`spine_query`) doesn't shell out so doesn't need it.
+- **AGENTS.md "Shared utilities" subsection now references `src/util/path-exists.ts`** with the rationale: `Bun.file(dir).exists()` returns false for real directories on some Bun versions. The next-agent caught this during their test-writing pass; codifying the rule in AGENTS.md prevents the rediscovery.
+- **No new tests written for Tier 3** in this pass — same deferred-test scope as the original Tier 1+2 ship. The next agent's test-writing pattern (`toolResultText` helper, `mkdtemp` workspace fixtures, spawn-injection in `commit.test.ts`) is the template. Recommend a follow-up PR that adds `workspace-info.test.ts`, `task-dispatch.test.ts`, `spine-query.test.ts`, `changelog-emit.test.ts` mirroring those patterns.
+- **Tool count math:** 45 → 49 (+4 Tier 3 tools, 0 removals). `scripts/runtime-smoke.ts` `expectedTools` and `src/plugin-contract.test.ts` `expectedTools` both updated.
+
+### What's left after this pass
+
+| Item | Status |
+|---|---|
+| Tier 1 + 2 audit findings (8 items) | ✅ shipped |
+| Tier 1 + 2 new tools (7 tools) | ✅ shipped + tested |
+| Tier 3 new tools — `workspace_info`, `task_dispatch`, `spine_query`, `changelog_emit` | ✅ shipped (tests deferred) |
+| Tier 3 new tool — `memory_correlate` | ⏸ deferred until Engram dispatcher lands |
+| `context-usage.ts` split | ✅ re-evaluated, decision stands |
+| `prompts/orchestrator.txt` update | ✅ shipped |
+| Tier 3 unit tests | ⏳ next PR |
+| `toolResultText` test-util dedup (6× duplicated across test files) | ⏳ next PR — extract to `src/test-util/` |
+| `~/.config/opencode/opencode.json` wiring explore subagents to library | ⏳ separate Fleet config change |

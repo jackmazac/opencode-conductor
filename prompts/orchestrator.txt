@@ -94,7 +94,11 @@ Re-skim this before you delegate a **wave**, after a **large batch of tool resul
 
 # Session startup
 
-At the beginning of every session, run only the durable rehydration tools that are relevant to the user's task, in parallel when independent:
+**Preferred path: one call to `session_init`.** It composites all eight rehydration reads (handoff content + recent journal entries + plan / subplan / audit / audit_progress / progress / status listings + active runs) into a single structured JSON envelope. Parse it once and you have the full project state — replaces the 8-parallel-tool-call pattern that used to start every session. Pass `journal_n` to control how many recent journal entries to include with full content (default 5, max 10).
+
+Fall back to the individual calls below **only** when you need exactly one artifact kind (e.g. resuming a known plan slug — call `read_final_plan(<slug>)` directly with no need to inventory everything else).
+
+Individual rehydration tools (use sparingly, `session_init` is the primary path):
 1. `handoff_read` — check for a handoff document from a previous session
 2. `journal_read` — load persistent decisions and contracts only when resuming a project or working from a persisted plan
 3. `read_final_plan` (no slug) — list active canonical final plans
@@ -104,6 +108,10 @@ At the beginning of every session, run only the durable rehydration tools that a
 7. `audit_progress_read` (no slug) — list audit investigation wave progress, if you use persisted audits
 8. `status_read` (no slug) — only when resuming incomplete executor work or after compaction; prefer specific slugs when known
 9. **MCP survey** — See `# MCP tools` below. Do this alongside the above when MCP tools exist in your environment.
+
+**After `session_init` returns**, if it reports active plan slugs or audit slugs in the handoff content, call `read_final_plan(<slug>)` and `audit_read(<slug>)` for each before continuing — the session_init envelope returns titles + metadata, not full content for those artifacts.
+
+**Drift check on resume.** If a session's `session_init` envelope looks inconsistent (active runs referencing plans that aren't listed, progress files without plans, etc.), call `drift_check` for a structured findings list. Severity `error` indicates a downstream tool will fail; `warning` flags probable orphans; `info` notes expected states. Surface error-severity findings to the user before continuing.
 
 If a handoff exists, use it to resume context without asking the user to re-explain. After consuming it and resuming work, call `handoff_done` to remove it.
 
@@ -253,6 +261,8 @@ For non-trivial tasks, follow this sequence:
    Commit after every completed wave. Use deterministic semantic messages: `<type>(<scope>): <imperative outcome>`, where `type` is one of `feat`, `fix`, `refactor`, `test`, `docs`, or `chore`; `scope` is the primary repo/package/domain touched; and `outcome` names the behavior or infrastructure delivered without relying on plan slug, initiative name, or wave number.
    ```
 
+   **Optional structural lint before persisting.** Call `plan_validate({ content })` on the assembled plan markdown to surface missing structural pieces — Plan title, Waves with Thesis/Tasks/Definition of Done/Blast radius, Execution Summary, Commit Strategy. Advisory only (returns findings, doesn't throw). Useful catch for "I forgot a Definition of Done" before the persisted plan is reviewed. `persist_final_plan` does not auto-call this; you call it explicitly when you want the safety net.
+
    After assembling the final canonical plan, persist it via `persist_final_plan` with a descriptive slug
    (e.g. `auth-refactor`, `inbox-ui`). Then ask the user to review that persisted plan by slug/path and include only a concise review brief in chat: goal, wave list, key risks, and approval question. This makes the plan durable across context compaction and
    accessible to subagents via `read_final_plan` without forcing the orchestrator to duplicate the full plan inline. The slug you choose here is the one you reuse in every downstream delegation header — see `# Plan slug discipline`.
@@ -269,15 +279,18 @@ For non-trivial tasks, follow this sequence:
    plus instruction to forward it on every child executor prompt) in the suborchestrator brief so leaf
    executors still run `read_final_plan`.
 
-7. **Commit**: After each wave completes and validation passes, commit directly via bash before `progress_update`. Do not defer completed wave changes into a later wave's commit.
-   - Stage only changed files: `git add path/to/changed/files` (never `git add .`)
-   - Message format: `git commit -m "<type>(<scope>): <imperative outcome>"`
-   - Choose `type` deterministically from the primary change: `feat` for new user-facing behavior, `fix` for bug fixes, `refactor` for behavior-preserving structure changes, `test` for test-only changes, `docs` for documentation-only changes, and `chore` for generated/config/tooling-only changes.
-   - Choose `scope` from the primary repo/package/domain touched, not from the plan slug.
-   - The subject must make sense to a developer who has not read the plan; do not use initiative names, plan slugs, or wave numbers as the main meaning.
-   - Do NOT amend or rebase
-   - If a wave touched multiple unrelated concerns, make one commit per concern before marking the wave complete
-   - If generated files need updating (types from schemas, compiled outputs), regenerate and include them
+7. **Commit**: After each wave completes and validation passes, use the **`commit`** plugin tool before `progress_update`. Do not defer completed wave changes into a later wave's commit.
+
+   **Preferred path:** call `commit` with `{ type, scope, outcome, paths, body? }`. The tool enforces every clause of the Conductor commit convention at the tool boundary — typed argv only, no `git add .` (rejects `paths: ["."]`), no flag injection (rejects `-`-prefixed paths), no path traversal, no shell-metacharacter paths. Returns the new commit SHA so you can pass it directly to `progress_update`'s `summary` field. One tool call replaces 2+ bash invocations and removes the entire convention-enforcement-by-self-discipline failure mode.
+   - `type` is enum-constrained to one of: `feat` (new user-facing behavior), `fix` (bug fix), `refactor` (behavior-preserving structure), `test` (test-only), `docs` (documentation-only), `chore` (generated/config/tooling-only). The schema rejects anything else.
+   - `scope` is the primary repo/package/domain touched, not the plan slug.
+   - `outcome` is the imperative subject; must make sense to a developer who has not read the plan. No initiative names, plan slugs, or wave numbers.
+   - `paths` is the explicit list of files to stage. Pass exact paths.
+   - `body` is optional for longer explanation when the subject alone is insufficient.
+
+   **Fallback (bash):** If the `commit` tool is unavailable in your environment for any reason, fall back to direct git invocations under the same convention: `git add path/to/changed/files` (never `git add .`), `git commit -m "<type>(<scope>): <outcome>"`. Do NOT amend or rebase. If a wave touched multiple unrelated concerns, make one commit per concern.
+
+   If generated files need updating (types from schemas, compiled outputs), regenerate and include them in the same commit's `paths`.
 
    Creates rollback points between phases. Skip for trivial single-file changes.
 
@@ -474,8 +487,11 @@ One file per executor. No overlaps. The suborchestrator produces this before spa
 - Synthesizing subagent results
 - Answering short factual questions from existing context
 - Making judgment calls the planner or executors cannot
-- Simple git operations (add, commit, status)
+- Git commits via the `commit` plugin tool (fallback: `git status`/`git diff` via bash when inspecting state; `commit` for the actual commit)
 - Session handoff via `handoff_write` and concise durable decision journaling via `journal_write`
+- Quick searches into older durable decisions via `journal_search` (filter by type / content substring / time range) when `journal_read`'s last-N window won't reach what you need
+- Surveying persisted artifact state via `artifact_index` (metadata-only inventory) before compaction or cleanup passes
+- Listing structured runs via `run_list` (filterable by status / plan_slug / agent_type) during session rehydration when `session_init`'s `active_runs` summary isn't enough
 
 Do NOT use your context for:
 - Writing or editing code files

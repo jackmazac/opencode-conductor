@@ -49,7 +49,7 @@ For local development:
 }
 ```
 
-## Plugin tools (45)
+## Plugin tools (49)
 
 | Category | Tools |
 |---|---|
@@ -62,10 +62,11 @@ For local development:
 | Audits | `audit_write`, `audit_read`, `audit_done`, `audit_progress_update`, `audit_progress_read`, `audit_progress_done` |
 | Journal | `journal_write`, `journal_read`, `journal_search`, `journal_done` |
 | Handoff | `handoff_write`, `handoff_read`, `handoff_done` |
-| Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher) |
-| Diagnostics | `context_usage` |
+| Lifecycle | `lifecycle_concord_ingest` (declarative), `conflict_context` (dispatcher), `spine_query` (read SQLite event log) |
+| Diagnostics | `context_usage`, `workspace_info` (workspace_id + git HEAD + dirty files + recent commits) |
 | Sessions | `session_init` (composite rehydration), `artifact_index` (inventory), `drift_check` (consistency) |
-| Git | `commit` (semantic commit with Conductor convention enforced) |
+| Git | `commit` (semantic commit with Conductor convention enforced), `changelog_emit` (markdown from wave commits) |
+| Delegation | `task_dispatch` (plan-aware `task` prompt builder + slug validator) |
 | Exploration | `explore_fast`, `discard_explore_cache` (Cursor `agent` CLI wrapper + cache management — see next section) |
 
 The canonical tool list is enforced in `src/plugin-contract.test.ts`. The runtime smoke script (`scripts/runtime-smoke.ts`) asserts the tool count on every run.
@@ -152,7 +153,7 @@ Conductor writes all lifecycle and plan artifacts declaratively to disk. Engram 
 
 ```bash
 bun run check               # lint:no-zod + typecheck + tests (260+)
-bun run smoke:runtime       # assert plugin loads and exposes 45 tools
+bun run smoke:runtime       # assert plugin loads and exposes 49 tools
 bun run smoke:explore-fast  # CURSOR_CLI_INTEGRATION=1 — exercises the real Cursor agent CLI
 bun run smoke:commit        # CONDUCTOR_GIT_INTEGRATION=1 — real git commit in a temp repo
 bun run doctor -- --json
