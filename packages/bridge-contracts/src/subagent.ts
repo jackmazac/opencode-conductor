@@ -13,7 +13,7 @@
  * This module defines a stable envelope contract that orchestrator code
  * SHOULD validate at the boundary:
  *
- *   import { subagentResultEnvelopeSchema } from "@jackmazac/opencode-conductor/bridge-contracts/subagent";
+ *   import { subagentResultEnvelopeSchema } from "@mazac-fox/opencode-conductor/bridge-contracts/subagent";
  *
  *   const parsed = subagentResultEnvelopeSchema.safeParse(rawResult);
  *   if (!parsed.success) {

@@ -1,4 +1,4 @@
-# Contributing to @jackmazac/opencode-conductor
+# Contributing to @mazac-fox/opencode-conductor
 
 This plugin orchestrates multi-agent workflows inside opencode. Authoring rules are stricter than for an ordinary npm package because mistakes can crash opencode itself, not just conductor.
 
@@ -37,7 +37,7 @@ args: z.object({ foo: z.string(), count: z.number().optional() })
 ### Wrap the default export with `wrapPlugin`
 
 ```ts
-import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
+import { wrapPlugin } from "@mazac-fox/opencode-host-adapter";
 
 export default wrapPlugin(ConductorPlugin, { name: "conductor" });
 ```
@@ -62,7 +62,7 @@ This turns malformed subagent output into a clear error string instead of a down
 
 ## Naming convention
 
-This package's npm name is `@jackmazac/opencode-conductor` to avoid collision with `opencode-conductor` (NocturnLabs' separate package). Always reference it by the scoped name in `opencode.json` plugin lists, package.json deps, and prompt file paths.
+This package's npm name is `@mazac-fox/opencode-conductor` to avoid collision with `opencode-conductor` (NocturnLabs' separate package). Always reference it by the scoped name in `opencode.json` plugin lists, package.json deps, and prompt file paths.
 
 ## Versioning
 

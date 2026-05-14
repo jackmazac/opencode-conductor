@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertToolFailureResult, wrapPlugin } from "@jackmazac/opencode-host-adapter";
+import { assertToolFailureResult, wrapPlugin } from "@mazac-fox/opencode-host-adapter";
 import { createConductorHooks } from "./index";
 import { __test_setEngramDispatch } from "./workflow-tools/conflict-context";
 

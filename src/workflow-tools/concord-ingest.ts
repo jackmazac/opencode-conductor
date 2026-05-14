@@ -7,7 +7,7 @@ import {
   buildArtifactRef,
   parseConcordEventId,
   parseLifecycleObjectId,
-} from "@jackmazac/opencode-fleet-contracts";
+} from "@mazac-fox/opencode-fleet-contracts";
 import { tool } from "@opencode-ai/plugin";
 import { concordCollisionArtifactRefSchema } from "../../packages/lifecycle-contracts/src/external-sources.ts";
 import { createSpineStore } from "../../packages/spine/src/index.ts";

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
-import { makeHealthReport, type HealthCheck } from "@jackmazac/opencode-fleet-contracts";
+import { makeHealthReport, type HealthCheck } from "@mazac-fox/opencode-fleet-contracts";
 import { detectStackProfile, doctorStackProfile, exportPolicy } from "./profile.ts";
 
 async function main(): Promise<void> {

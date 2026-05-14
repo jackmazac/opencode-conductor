@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import path from "node:path";
-import { parsePlanId } from "@jackmazac/opencode-fleet-contracts";
+import { parsePlanId } from "@mazac-fox/opencode-fleet-contracts";
 import { tool } from "@opencode-ai/plugin";
 import { readPlanIndex } from "../plan-artifacts.ts";
 

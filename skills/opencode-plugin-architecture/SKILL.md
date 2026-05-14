@@ -27,7 +27,7 @@ Do not use this skill for application product code unless that code is itself an
 
 Build plugins around ownership, not convenience.
 
-- Conductor owns only the `@jackmazac/opencode-conductor` product surface (orchestration tools and `.opencode/` doctrine it writes). It does **not** own OpenCode plugins that are not authored and maintained by jackmazac; community or third-party plugins are operator/Fleet configuration, not conductor scope.
+- Conductor owns only the `@mazac-fox/opencode-conductor` product surface (orchestration tools and `.opencode/` doctrine it writes). It does **not** own OpenCode plugins that are not authored and maintained by jackmazac; community or third-party plugins are operator/Fleet configuration, not conductor scope.
 - Conductor owns doctrine, plans, runs, lifecycle artifacts, progress, audits, journals, handoffs, status mirrors, event spine, and context diagnostics.
 - Engram owns local memory, memory search, bounded context bundles, feedback, stats, and lifecycle artifact ingestion.
 - Codemem owns code graph truth, drift analysis, impact cones, API surface, review focus, and advisory code intelligence.
@@ -42,7 +42,7 @@ Prefer correlation over coupling. A plugin should exchange canonical IDs, artifa
 
 Classify the thing before writing code.
 
-- Runtime tool plugin: exposes one or more OpenCode tools and must be wrapped with wrapPlugin from @jackmazac/opencode-host-adapter.
+- Runtime tool plugin: exposes one or more OpenCode tools and must be wrapped with wrapPlugin from @mazac-fox/opencode-host-adapter.
 - Hook-only plugin: intercepts OpenCode hooks and may expose no tools, like Concord.
 - Library-only package: exports shared code and has no plugin_ref, like Host Adapter.
 - CLI/control-plane package: manages config, validation, install, or reporting, like OpenCode Fleet.
@@ -86,7 +86,7 @@ Keep the package root small. Runtime plugin load should not eagerly initialize d
 
 ## Package Contract
 
-Use @jackmazac/opencode-host-adapter and @jackmazac/opencode-fleet-contracts as first-class dependencies.
+Use @mazac-fox/opencode-host-adapter and @mazac-fox/opencode-fleet-contracts as first-class dependencies.
 
 ```json
 {
@@ -99,14 +99,14 @@ Use @jackmazac/opencode-host-adapter and @jackmazac/opencode-fleet-contracts as 
     "my-plugin": "./src/cli.ts"
   },
   "dependencies": {
-    "@jackmazac/opencode-fleet-contracts": "file:../opencode-fleet-contracts",
-    "@jackmazac/opencode-host-adapter": "file:../opencode-host-adapter",
+    "@mazac-fox/opencode-fleet-contracts": "file:../opencode-fleet-contracts",
+    "@mazac-fox/opencode-host-adapter": "file:../opencode-host-adapter",
     "@opencode-ai/plugin": "1.14.31"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test",
-    "lint:no-zod": "bun run ./node_modules/@jackmazac/opencode-host-adapter/src/cli/check-no-zod-import.ts src/",
+    "lint:no-zod": "bun run ./node_modules/@mazac-fox/opencode-host-adapter/src/cli/check-no-zod-import.ts src/",
     "check": "bun run lint:no-zod && bun run typecheck && bun test",
     "doctor": "bun src/cli.ts doctor",
     "status": "bun src/cli.ts status",
@@ -123,7 +123,7 @@ The default export should be thin and wrapped.
 
 ```ts
 import type { Plugin } from "@opencode-ai/plugin";
-import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
+import { wrapPlugin } from "@mazac-fox/opencode-host-adapter";
 import { createMyPluginTools } from "./tools";
 
 const MyPlugin: Plugin = async ({ project, client, app }) => {
@@ -223,7 +223,7 @@ Do not create framework abstractions before the second real use. Prefer one clea
 
 Use fleet primitives instead of inventing new shapes.
 
-- Branded IDs and parsers come from @jackmazac/opencode-fleet-contracts.
+- Branded IDs and parsers come from @mazac-fox/opencode-fleet-contracts.
 - FleetContext is the standard correlation carrier.
 - FleetTelemetryEnvelope is the standard telemetry envelope.
 - ArtifactRef is the standard durable artifact pointer.

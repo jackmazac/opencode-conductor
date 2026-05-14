@@ -1,4 +1,4 @@
-# @jackmazac/opencode-conductor — agent guide
+# @mazac-fox/opencode-conductor — agent guide
 
 ## Scope
 
@@ -8,11 +8,11 @@ Do not implement features that belong to other fleet plugins. Conductor is narro
 
 ## Plugin ownership boundary
 
-This repository maintains **`@jackmazac/opencode-conductor`** and the bridge or contract packages it exports (for example under `packages/`). Conductor **does not** own OpenCode plugins that are **not** created and maintained by jackmazac. Do not add code, prompts, or documentation here that implies Conductor maintains third-party or community plugins; Fleet manifest and local `opencode.json` are the layer for those installs.
+This repository maintains **`@mazac-fox/opencode-conductor`** and the bridge or contract packages it exports (for example under `packages/`). Conductor **does not** own OpenCode plugins that are **not** created and maintained by jackmazac. Do not add code, prompts, or documentation here that implies Conductor maintains third-party or community plugins; Fleet manifest and local `opencode.json` are the layer for those installs.
 
 ## Canonical contracts
 
-ID types (`AgentRunId`, `PlanId`, `PlanSlug`, `WorkspaceId`, `CorrelationId`, `WaveId`, `TaskId`, `SpineSeq`, `ArtifactRef`, `LifecycleObjectId`, `ConcordEventId`, `FleetRunId`), the telemetry envelope, artifact ref shapes, and the canonical `HealthReport` all come from `@jackmazac/opencode-fleet-contracts` via `@jackmazac/opencode-host-adapter`. Do NOT redefine them here.
+ID types (`AgentRunId`, `PlanId`, `PlanSlug`, `WorkspaceId`, `CorrelationId`, `WaveId`, `TaskId`, `SpineSeq`, `ArtifactRef`, `LifecycleObjectId`, `ConcordEventId`, `FleetRunId`), the telemetry envelope, artifact ref shapes, and the canonical `HealthReport` all come from `@mazac-fox/opencode-fleet-contracts` via `@mazac-fox/opencode-host-adapter`. Do NOT redefine them here.
 
 ## What agents do here
 
@@ -31,7 +31,7 @@ ID types (`AgentRunId`, `PlanId`, `PlanSlug`, `WorkspaceId`, `CorrelationId`, `W
 - Shell out to other fleet plugins in production. Wave 2 removed all shell paths. Use tool dispatch (the `conflict_context` dispatcher abstraction) or declarative handoff (write an artifact; the other plugin picks it up).
 - Rename existing tools. Every orchestrator script, smoke test, and external agent depends on the exact tool names in `src/plugin-contract.test.ts`.
 - Mutate `.opencode/plans/<slug>.md` file paths. Downstream tools parse artifacts by slug. Changing the path convention breaks all consumers.
-- Import Zod directly in `src/`. The `lint:no-zod` check enforces this. Use the validation utilities exported from `@jackmazac/opencode-fleet-contracts` or `@jackmazac/opencode-host-adapter`.
+- Import Zod directly in `src/`. The `lint:no-zod` check enforces this. Use the validation utilities exported from `@mazac-fox/opencode-fleet-contracts` or `@mazac-fox/opencode-host-adapter`.
 
 ## Critical invariants
 

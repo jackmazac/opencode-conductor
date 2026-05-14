@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, readdir, rename, rmdir, stat } from "node:fs/promises";
-import { newPlanId, parsePlanId } from "@jackmazac/opencode-fleet-contracts";
+import { newPlanId, parsePlanId } from "@mazac-fox/opencode-fleet-contracts";
 
 import { rel } from "./util/format";
 import { slugPattern, validateSlug } from "./util/slug";

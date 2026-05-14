@@ -1,5 +1,5 @@
 import { type Plugin, tool } from "@opencode-ai/plugin";
-import { wrapPlugin } from "@jackmazac/opencode-host-adapter";
+import { wrapPlugin } from "@mazac-fox/opencode-host-adapter";
 import { discardCache as discardExploreCache } from "./explore-cache";
 import { runExploreFast } from "./explore-fast";
 import { createPlanArtifactStore } from "./plan-artifacts";

@@ -2,7 +2,7 @@
  * Contracts compat test — Wave 0, Task C
  *
  * Verifies that the on-disk artifact shapes Conductor emits today decode cleanly
- * through @jackmazac/opencode-fleet-contracts without any changes to Conductor.
+ * through @mazac-fox/opencode-fleet-contracts without any changes to Conductor.
  *
  * No subprocesses, no disk I/O. All assertions use representative fixtures
  * derived from the actual runtime shapes in:
@@ -30,7 +30,7 @@ import {
   parseWaveId,
   parseWorkspaceId,
   parseArtifactRef,
-} from "@jackmazac/opencode-fleet-contracts";
+} from "@mazac-fox/opencode-fleet-contracts";
 
 // ---------------------------------------------------------------------------
 // Shared ULID-shaped fixture IDs (plausible values Conductor would write in
